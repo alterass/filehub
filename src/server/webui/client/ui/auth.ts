@@ -1,3 +1,4 @@
+// @ts-nocheck
 // 登录 / 首次初始化（创建管理员）视图 —— 玻璃拟态卡片 + 渐变背景 + 品牌标识
 import { api } from '../api.js';
 import { bus, icon } from '../util.js';

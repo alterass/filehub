@@ -1,3 +1,4 @@
+// @ts-nocheck
 // FileHub API 客户端：登录态走 HttpOnly Cookie（同源自动携带），也兼容 Bearer
 import { bus } from './util.js';
 

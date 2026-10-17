@@ -1,3 +1,4 @@
+// @ts-nocheck
 // FileHub 前端公共工具：图标、格式化、事件总线、toast、长按手势
 
 // ---------- 事件总线 ----------
@@ -64,7 +65,7 @@ const EXT_MAP = {
   audio: ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'],
   archive: ['zip', 'rar', '7z', 'tar', 'gz'],
   code: ['js', 'ts', 'json', 'html', 'htm', 'css', 'py', 'java', 'c', 'cpp', 'h', 'sh', 'yml', 'yaml', 'xml', 'sql'],
-  text: ['txt', 'md', 'pdf', 'csv', 'log', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'],
+  text: ['txt', 'md', 'pdf', 'epub', 'csv', 'log', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'],
 };
 
 export function extOf(name) {

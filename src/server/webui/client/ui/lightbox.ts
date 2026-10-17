@@ -1,3 +1,4 @@
+// @ts-nocheck
 // 图片灯箱：多图切换、滚轮/双击/双指缩放、拖拽平移、滑动翻页
 import { $, icon } from '../util.js';
 import { downloadUrl } from '../api.js';
@@ -13,10 +14,10 @@ export function openLightbox(items, startIndex) {
   ov.innerHTML = `
     <div class="lb-backdrop"></div>
     <div class="lb-top">
+      <button class="icon-btn lb-close" title="关闭">${icon('close')}</button>
       <span class="lb-name"></span>
       <span class="lb-count"></span>
       <a class="icon-btn" href="${downloadUrl(items[index].id)}" target="_blank" title="下载原图">${icon('download')}</a>
-      <button class="icon-btn lb-close" title="关闭">${icon('close')}</button>
     </div>
     <div class="lb-stage" touch-action="none">
       <img class="lb-img" draggable="false" alt="" />

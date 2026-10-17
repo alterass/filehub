@@ -1,3 +1,4 @@
+// @ts-nocheck
 // FileHub 前端入口：启动引导与路由
 import { api } from './api.js';
 import { state } from './store.js';

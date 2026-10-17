@@ -585,6 +585,85 @@ input::placeholder { color: color-mix(in srgb, var(--dim) 70%, transparent); }
   font-size: 12px; word-break: break-all; user-select: text;
 }
 
+/* ---------- 音频播放器 ---------- */
+.audio-overlay { display: flex; align-items: center; justify-content: center; padding: 24px; }
+.audio-card {
+  position: relative; width: 420px; max-width: 100%;
+  background: var(--panel); border-radius: 16px; padding: 18px;
+  box-shadow: var(--shadow-lg);
+  opacity: 0; transform: translateY(12px) scale(0.97);
+  transition: opacity 0.18s, transform 0.18s;
+}
+.overlay.show .audio-card { opacity: 1; transform: none; }
+.audio-head { display: flex; align-items: center; gap: 8px; }
+.audio-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audio-art {
+  display: flex; align-items: center; justify-content: center;
+  margin: 18px auto 10px; color: var(--accent);
+}
+.audio-art .icon { width: 88px; height: 88px; stroke-width: 1; }
+.audio-name {
+  font-weight: 700; text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.audio-meta { text-align: center; color: var(--dim); font-size: 12px; margin: 2px 0 12px; }
+.audio-mount { margin: 4px 0 6px; }
+.audio-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.audio-nav .btn { flex: 1; }
+
+/* ---------- 文档预览 ---------- */
+.doc-overlay { display: flex; align-items: center; justify-content: center; padding: 24px; }
+.doc-panel {
+  position: relative; width: min(960px, 100%); height: min(88vh, 900px);
+  display: flex; flex-direction: column;
+  background: var(--panel); border-radius: 14px;
+  box-shadow: var(--shadow-lg); overflow: hidden;
+  opacity: 0; transform: translateY(12px) scale(0.98);
+  transition: opacity 0.18s, transform 0.18s;
+}
+.overlay.show .doc-panel { opacity: 1; transform: none; }
+.doc-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; border-bottom: 1px solid var(--line);
+}
+.doc-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-body { flex: 1; overflow: auto; background: var(--panel-2); }
+.doc-mount { min-height: 100%; }
+.doc-iframe { display: block; width: 100%; height: 100%; min-height: 70vh; border: 0; background: #fff; }
+.doc-fallback { color: var(--dim); font-size: 12px; margin: 10px 14px; }
+.doc-pre {
+  margin: 0; padding: 20px 24px;
+  white-space: pre-wrap; word-break: break-word;
+  font: 13px/1.7 ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+}
+.doc-md, .doc-epub-wrap { max-width: 780px; margin: 0 auto; padding: 28px 32px 64px; }
+.doc-md h1, .doc-md h2, .doc-md h3 { line-height: 1.35; margin: 1.2em 0 0.5em; }
+.doc-md h1 { font-size: 24px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.doc-md h2 { font-size: 20px; }
+.doc-md h3 { font-size: 16px; }
+.doc-md p { margin: 0.6em 0; }
+.doc-md pre {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px 14px; overflow-x: auto;
+}
+.doc-md code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.92em; }
+.doc-md blockquote {
+  margin: 0.8em 0; padding: 4px 14px;
+  border-left: 3px solid var(--accent); color: var(--dim);
+}
+.doc-md img { max-width: 100%; border-radius: 8px; }
+.doc-epub-title { font-size: 26px; margin: 0 0 18px; line-height: 1.3; }
+.epub-chapter { margin-bottom: 28px; }
+.epub-chapter-title {
+  font-size: 18px; margin: 0 0 10px;
+  border-bottom: 1px solid var(--line); padding-bottom: 8px;
+}
+.doc-error {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--danger); padding: 40px 24px;
+}
+.doc-error .icon { width: 20px; height: 20px; }
+
 /* ---------- toast ---------- */
 #toasts {
   position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
@@ -622,6 +701,9 @@ input::placeholder { color: color-mix(in srgb, var(--dim) 70%, transparent); }
   .frow .fsize, .frow .fdate { display: none; }
   .dir-stats { display: none; }
   .user-chip span { display: none; }
+  .audio-overlay, .doc-overlay { padding: 0; }
+  .audio-card { width: 100%; border-radius: 16px 16px 0 0; align-self: flex-end; }
+  .doc-panel { width: 100%; height: 100%; max-height: none; border-radius: 0; }
 }
 
 /* 桌面宽度较小时隐藏日期列 */

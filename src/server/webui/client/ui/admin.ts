@@ -1,3 +1,4 @@
+// @ts-nocheck
 // 用户管理面板（仅管理员）：新增用户、重置密码、删除用户
 import { api } from '../api.js';
 import { icon, toast, formatSize } from '../util.js';

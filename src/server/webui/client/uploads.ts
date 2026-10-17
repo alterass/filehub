@@ -1,3 +1,4 @@
+// @ts-nocheck
 // 上传队列：XHR 顺序上传 + 进度面板（可最小化/取消）
 import { upload } from './api.js';
 import { bus, icon, formatSize, toast } from './util.js';

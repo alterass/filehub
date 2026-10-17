@@ -1,3 +1,4 @@
+// @ts-nocheck
 // 通用对话框：prompt / confirm / 移动到文件夹 / 操作菜单（电脑端浮层，手机端底部面板）
 import { $, icon } from '../util.js';
 

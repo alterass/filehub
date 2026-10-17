@@ -12,6 +12,7 @@ const MIME_MAP: Record<string, string> = {
   m4a: 'audio/mp4', aac: 'audio/aac',
   // 文本/文档
   txt: 'text/plain', md: 'text/markdown', pdf: 'application/pdf',
+  epub: 'application/epub+zip',
   html: 'text/html', htm: 'text/html', css: 'text/css', csv: 'text/csv',
   json: 'application/json', xml: 'application/xml',
   js: 'text/javascript', ts: 'text/plain',

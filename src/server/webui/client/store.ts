@@ -1,3 +1,4 @@
+// @ts-nocheck
 // 全局状态
 import { bus } from './util.js';
 

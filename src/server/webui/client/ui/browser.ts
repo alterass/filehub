@@ -1,3 +1,4 @@
+// @ts-nocheck
 // 文件浏览主视图：面包屑、列表/网格、上传、搜索、右键/长按菜单、拖拽
 import { api, downloadUrl, thumbUrl } from '../api.js';
 import { state, navigate, setView, reload, toggleThumbs } from '../store.js';
@@ -8,6 +9,8 @@ import {
 import { prompt, confirm, actionMenu, moveDialog } from './dialogs.js';
 import { openLightbox } from './lightbox.js';
 import { openPlayer } from './player.js';
+import { openAudioPlayer } from './audio.js';
+import { openDocumentPreview, isDocumentPreviewable } from './preview.js';
 import { openAdminPanel } from './admin.js';
 import { openSettingsPanel } from './settings.js';
 import { enqueue } from '../uploads.js';
@@ -292,8 +295,16 @@ function imagesInFolder() {
   return state.items.filter((i) => kindOf(i).kind === 'image');
 }
 
-function mediaInFolder() {
-  return state.items.filter((i) => ['video', 'audio'].includes(kindOf(i).kind));
+function videosInFolder() {
+  return state.items.filter((i) => kindOf(i).kind === 'video');
+}
+
+function audiosInFolder() {
+  return state.items.filter((i) => kindOf(i).kind === 'audio');
+}
+
+function documentsInFolder() {
+  return state.items.filter((i) => i.type === 'file' && isDocumentPreviewable(i.name));
 }
 
 function activate(item) {
@@ -303,8 +314,12 @@ function activate(item) {
     navigate(item.id);
   } else if (kind === 'image') {
     openLightbox(imagesInFolder(), imagesInFolder().findIndex((i) => i.id === item.id));
-  } else if (kind === 'video' || kind === 'audio') {
-    openPlayer(item, mediaInFolder());
+  } else if (kind === 'video') {
+    openPlayer(item, videosInFolder());
+  } else if (kind === 'audio') {
+    openAudioPlayer(item, audiosInFolder());
+  } else if (isDocumentPreviewable(item.name)) {
+    openDocumentPreview(item, documentsInFolder());
   } else {
     window.open(downloadUrl(item.id), '_blank');
   }

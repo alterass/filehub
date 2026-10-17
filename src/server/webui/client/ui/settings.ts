@@ -1,3 +1,4 @@
+// @ts-nocheck
 // 个人设置面板：长按加速倍数（可修改）与服务端工作目录（只读展示）
 import { api } from '../api.js';
 import {

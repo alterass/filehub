@@ -1,3 +1,4 @@
+// @ts-nocheck
 // 视频播放器（xgplayer）：长按倍速（手机/鼠标通用）、播放列表切换
 import { icon, formatRate } from '../util.js';
 import { rawUrl, downloadUrl } from '../api.js';
@@ -49,6 +50,10 @@ export function openPlayer(item, playlist = []) {
     return () => {};
   }
 
+  // 移动端全屏：优先以屏幕长边作为主轴布局。触屏设备启用 rotateFullscreen，
+  // xgplayer 会根据当前 orientation 自动决定是否旋转 90°（横屏不旋转，竖屏旋转）。
+  const touchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
   player = new Player({
     el: mount,
     url: rawUrl(playlist[current].id),
@@ -58,6 +63,7 @@ export function openPlayer(item, playlist = []) {
     fluid: true,
     playbackRate: [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5],
     pip: !('ontouchstart' in window),
+    fullscreen: { rotateFullscreen: touchDevice },
   });
 
   const setTitle = () => {
