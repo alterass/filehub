@@ -131,6 +131,7 @@ input::placeholder { color: color-mix(in srgb, var(--dim) 70%, transparent); }
 /* ---------- 认证页 ---------- */
 .auth-view {
   min-height: 100vh; display: grid; place-items: center;
+  grid-template-columns: minmax(0, 1fr);
   padding: 24px; position: relative; overflow: hidden;
   background:
     radial-gradient(1100px 620px at 12% -12%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 62%),
@@ -231,7 +232,7 @@ input::placeholder { color: color-mix(in srgb, var(--dim) 70%, transparent); }
 .brand { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; letter-spacing: 0.2px; }
 .brand .icon { color: var(--accent); width: 22px; height: 22px; }
 .search-box {
-  flex: 1; max-width: 420px; display: flex; align-items: center; gap: 8px;
+  flex: 1; max-width: 420px; min-width: 0; display: flex; align-items: center; gap: 8px;
   background: var(--panel-2); border: 1px solid var(--line);
   border-radius: 999px; padding: 0 12px; height: 36px;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -243,6 +244,7 @@ input::placeholder { color: color-mix(in srgb, var(--dim) 70%, transparent); }
 }
 .search-box .icon-btn { width: 26px; height: 26px; }
 .header-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+#btnMenu { display: none; }
 .user-chip {
   display: inline-flex; align-items: center; gap: 6px;
   height: 34px; padding: 0 12px; border: none; border-radius: 999px;
@@ -690,8 +692,10 @@ input::placeholder { color: color-mix(in srgb, var(--dim) 70%, transparent); }
   .brand b { display: none; }
   .header-actions { gap: 2px; }
   #btnUpload { display: none; }         /* 由 FAB 承担 */
-  #btnAdmin { display: none; }          /* 收进用户菜单 */
-  .search-box { max-width: none; }
+  /* 移动端：顶栏操作统一收进汉堡菜单 */
+  #btnNewFolder, #btnView, #btnThumbs, #btnAdmin, #btnUser { display: none; }
+  #btnMenu { display: inline-flex; }
+  .search-box { max-width: none; min-width: 0; }
   .search-box input { font-size: 16px; } /* 防 iOS 聚焦缩放 */
   .crumb-bar { padding: 6px 10px; }
   .file-area { padding: 10px 10px 110px; }
@@ -700,7 +704,8 @@ input::placeholder { color: color-mix(in srgb, var(--dim) 70%, transparent); }
   .frow { grid-template-columns: 32px minmax(0, 1fr) 34px; padding: 10px 6px; }
   .frow .fsize, .frow .fdate { display: none; }
   .dir-stats { display: none; }
-  .user-chip span { display: none; }
+  .auth-view { padding: 16px; }
+  .auth-card { padding: 32px 22px 28px; border-radius: 18px; }
   .audio-overlay, .doc-overlay { padding: 0; }
   .audio-card { width: 100%; border-radius: 16px 16px 0 0; align-self: flex-end; }
   .doc-panel { width: 100%; height: 100%; max-height: none; border-radius: 0; }

@@ -37,6 +37,7 @@ function build(app) {
         <button id="btnThumbs" class="icon-btn" title=""></button>
         <button id="btnAdmin" class="icon-btn" title="用户管理">${icon('users')}</button>
         <button id="btnUser" class="user-chip" title="账号">${icon('user')}<span></span></button>
+        <button id="btnMenu" class="icon-btn" title="菜单">${icon('menu')}</button>
       </div>
     </header>
     <div class="crumb-bar">
@@ -69,6 +70,7 @@ function build(app) {
   });
   $('#btnAdmin').addEventListener('click', openAdminPanel);
   $('#btnUser').addEventListener('click', userMenu);
+  $('#btnMenu').addEventListener('click', mobileMenu);
   $('#btnRefresh').addEventListener('click', () => reload());
   $('#searchClear').addEventListener('click', () => {
     $('#searchInput').value = '';
@@ -405,6 +407,47 @@ async function userMenu() {
     await api.logout();
     location.hash = '#/login';
     bus.emit('auth:logout');
+  }
+}
+
+/** 移动端顶栏汉堡菜单：新建文件夹、视图/缩略图切换、账号与退出 */
+async function mobileMenu() {
+  const actions = [
+    { icon: 'folderPlus', label: '新建文件夹', value: 'newFolder' },
+    {
+      icon: state.view === 'list' ? 'grid' : 'list',
+      label: state.view === 'list' ? '切换为网格视图' : '切换为列表视图',
+      value: 'view',
+    },
+    {
+      icon: state.thumbs ? 'image' : 'file',
+      label: state.thumbs ? '图片显示：缩略图' : '图片显示：图标',
+      value: 'thumbs',
+    },
+  ];
+  if (state.user?.role === 'admin') {
+    actions.push({ icon: 'users', label: '用户管理', value: 'admin' });
+  }
+  actions.push(
+    { icon: 'settings', label: '个人设置', value: 'settings' },
+    { icon: 'logout', label: '退出登录', value: 'logout', danger: true },
+  );
+
+  const action = await actionMenu({ x: innerWidth - 180, y: 56, items: actions });
+  switch (action) {
+    case 'newFolder': doMkdir(); break;
+    case 'view': setView(state.view === 'list' ? 'grid' : 'list'); break;
+    case 'thumbs':
+      toggleThumbs();
+      toast(state.thumbs ? '图片以缩略图显示' : '图片以图标显示', 'info', 1500);
+      break;
+    case 'settings': openSettingsPanel(); break;
+    case 'admin': openAdminPanel(); break;
+    case 'logout':
+      await api.logout();
+      location.hash = '#/login';
+      bus.emit('auth:logout');
+      break;
   }
 }
 
