@@ -1,0 +1,33 @@
+{
+  "name": "filehub",
+  "version": "0.1.0",
+  "description": "LAN-first personal cloud storage: WebUI, Node.js + TypeScript + Hono + PGlite + Drizzle",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "build": "node scripts/build-webui.mjs && tsc -p tsconfig.json && node scripts/build-launchers.mjs",
+    "typecheck": "tsc --noEmit",
+    "dev": "node scripts/build-webui.mjs && tsx watch src/server/main.ts",
+    "preserve": "npm run build",
+    "serve": "node dist/server/cli.js",
+    "prestart": "npm run build",
+    "start": "node dist/server/cli.js"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.3.0",
+    "@hono/node-server": "^1.13.0",
+    "drizzle-orm": "^0.36.0",
+    "hono": "^4.6.0",
+    "jimp": "^1.6.1",
+    "xgplayer": "^3.0.20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
