@@ -9,6 +9,7 @@ import { prompt, confirm, actionMenu, moveDialog } from './dialogs.js';
 import { openLightbox } from './lightbox.js';
 import { openPlayer } from './player.js';
 import { openAdminPanel } from './admin.js';
+import { openSettingsPanel } from './settings.js';
 import { enqueue } from '../uploads.js';
 import { ensurePosters } from '../poster.js';
 
@@ -46,23 +47,9 @@ function build(app) {
       <div id="dropHint" class="drop-hint" hidden>松开以上传到当前目录</div>
     </main>
     <input type="file" id="fileInput" multiple hidden />
-    <button id="fab" class="fab" title="上传">${icon('upload')}</button>
-    <footer class="app-footer" title="服务工作目录（点击复制）">
-      ${icon('folder')}<span class="wf-path" id="workDirPath">读取中…</span>
-    </footer>`;
+    <button id="fab" class="fab" title="上传">${icon('upload')}</button>`;
   root = app;
   built = true;
-
-  // 工作目录展示（点击复制）
-  $('.app-footer')?.addEventListener('click', () => {
-    const path = $('#workDirPath')?.textContent;
-    if (path && path !== '读取中…') {
-      navigator.clipboard?.writeText(path).then(
-        () => toast('工作目录已复制', 'ok', 1500),
-        () => {},
-      );
-    }
-  });
 
   // 头部事件
   $('#btnUpload').addEventListener('click', () => $('#fileInput').click());
@@ -388,13 +375,16 @@ async function doMkdir() {
 }
 
 async function userMenu() {
-  const actions = [];
+  const actions = [
+    { icon: 'settings', label: '个人设置', value: 'settings' },
+  ];
   if (state.user?.role === 'admin') {
     actions.push({ icon: 'users', label: '用户管理', value: 'admin' });
   }
   actions.push({ icon: 'logout', label: '退出登录', value: 'logout', danger: true });
   const rect = $('#btnUser').getBoundingClientRect();
   const action = await actionMenu({ x: rect.right - 160, y: rect.bottom + 6, items: actions });
+  if (action === 'settings') openSettingsPanel();
   if (action === 'admin') openAdminPanel();
   if (action === 'logout') {
     await api.logout();
@@ -405,21 +395,6 @@ async function userMenu() {
 
 // ---------- 入口 ----------
 
-let workDirLoaded = false;
-async function loadWorkDir() {
-  if (workDirLoaded) return;
-  workDirLoaded = true;
-  try {
-    const info = await api.serverInfo();
-    const el = $('#workDirPath');
-    if (el) el.textContent = info.workDir;
-    el.title = `服务工作目录：${info.workDir}（${info.platform} · v${info.version}，点击复制）`;
-  } catch {
-    const el = $('#workDirPath');
-    if (el) el.textContent = '';
-  }
-}
-
 export function mountBrowser(app) {
   // #app 常驻 DOM；以外壳标志元素判断是否需要重建（登出后 innerHTML 会被登录页替换）
   if (!built || !root || !root.querySelector('.app-header')) build(app);
@@ -428,6 +403,5 @@ export function mountBrowser(app) {
   const chip = $('#btnUser span');
   if (chip) chip.textContent = state.user?.name || '';
   $('#btnAdmin').style.display = state.user?.role === 'admin' ? '' : 'none';
-  void loadWorkDir();
   load();
 }

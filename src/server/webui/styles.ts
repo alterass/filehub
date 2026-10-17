@@ -555,6 +555,36 @@ input::placeholder { color: color-mix(in srgb, var(--dim) 70%, transparent); }
 .au-actions { display: flex; gap: 8px; }
 .au-actions .danger { color: var(--danger); }
 
+/* ---------- 个人设置面板 ---------- */
+.settings-panel { width: 460px; }
+.settings-section { padding: 4px 0 14px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+.settings-section:last-of-type { border-bottom: none; margin-bottom: 0; }
+.settings-label {
+  display: flex; align-items: center; gap: 7px;
+  font-weight: 600; margin-bottom: 10px;
+}
+.settings-label .icon { width: 16px; height: 16px; color: var(--accent); }
+.settings-hint { color: var(--dim); font-size: 12px; margin: 10px 0 0; line-height: 1.6; }
+.rate-control { display: flex; align-items: center; gap: 14px; }
+.rate-control input[type='range'] { flex: 1; accent-color: var(--accent); }
+.rate-value {
+  min-width: 48px; text-align: right;
+  font-weight: 700; font-size: 18px; color: var(--accent);
+}
+.rate-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.rate-chip {
+  border: 1px solid var(--line); background: var(--panel-2);
+  border-radius: 999px; padding: 5px 12px; font-size: 13px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.rate-chip:hover { border-color: var(--accent); }
+.rate-chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.settings-workdir {
+  padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel-2); color: var(--dim);
+  font-size: 12px; word-break: break-all; user-select: text;
+}
+
 /* ---------- toast ---------- */
 #toasts {
   position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
@@ -592,7 +622,6 @@ input::placeholder { color: color-mix(in srgb, var(--dim) 70%, transparent); }
   .frow .fsize, .frow .fdate { display: none; }
   .dir-stats { display: none; }
   .user-chip span { display: none; }
-  .app-footer { max-width: calc(100vw - 92px); font-size: 11px; padding: 5px 11px; }
 }
 
 /* 桌面宽度较小时隐藏日期列 */
@@ -601,22 +630,4 @@ input::placeholder { color: color-mix(in srgb, var(--dim) 70%, transparent); }
   .fdate { display: none; }
 }
 
-/* ---------- 服务信息页脚（显示工作目录） ---------- */
-.app-footer {
-  position: fixed; left: 14px; bottom: 12px; z-index: 25;
-  display: flex; align-items: center; gap: 7px;
-  max-width: min(46vw, 560px);
-  background: color-mix(in srgb, var(--panel) 85%, transparent);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  border: 1px solid var(--line); border-radius: 999px;
-  padding: 6px 14px; color: var(--dim); font-size: 12px;
-  box-shadow: 0 2px 10px rgba(2, 6, 23, 0.12);
-  opacity: 0.92; transition: opacity 0.2s;
-}
-.app-footer:hover { opacity: 1; }
-.app-footer .icon { width: 13px; height: 13px; flex: none; color: var(--accent); }
-.app-footer .wf-path {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl;
-  user-select: text;
-}
 `;

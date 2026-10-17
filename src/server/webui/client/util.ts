@@ -115,6 +115,12 @@ export function debounce(fn, ms) {
   };
 }
 
+/** 播放倍率展示：整数不带小数点，小数保留 1 位 */
+export function formatRate(rate) {
+  const n = Number(rate) || 1;
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
 // ---------- toast ----------
 export function toast(msg, type = 'info', ms = 3000) {
   const box = document.getElementById('toasts');

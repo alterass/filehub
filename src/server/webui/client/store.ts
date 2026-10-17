@@ -1,11 +1,21 @@
 // 全局状态
 import { bus } from './util.js';
 
+export const DEFAULT_LONG_PRESS_RATE = 2;
+export const MAX_LONG_PRESS_RATE = 5;
+
+function readLongPressRate() {
+  const raw = parseFloat(localStorage.getItem('fh:longPressRate') || '');
+  if (!Number.isFinite(raw) || raw < 1) return DEFAULT_LONG_PRESS_RATE;
+  return Math.min(MAX_LONG_PRESS_RATE, raw);
+}
+
 export const state = {
   user: null,          // { id, name, role }
   initialized: false,
   view: localStorage.getItem('fh:view') || 'list',       // list | grid
   thumbs: localStorage.getItem('fh:thumbs') !== 'off',   // 图片显示：true=缩略图(默认) false=图标
+  longPressRate: readLongPressRate(),                    // 长按加速倍数（默认 2，最大 5）
   cwdId: null,         // 当前目录 id（null = 根目录）
   cwdPath: [],         // 面包屑 [{id,name}]
   items: [],           // 当前目录内容
@@ -25,6 +35,18 @@ export function setThumbs(on) {
   state.thumbs = !!on;
   localStorage.setItem('fh:thumbs', state.thumbs ? 'on' : 'off');
   bus.emit('thumbs');
+}
+
+/** 长按加速倍数：限制在 1-5 倍，默认 2 倍 */
+export function setLongPressRate(rate) {
+  const num = Number(rate);
+  const value = Number.isFinite(num)
+    ? Math.min(MAX_LONG_PRESS_RATE, Math.max(1, num))
+    : DEFAULT_LONG_PRESS_RATE;
+  state.longPressRate = value;
+  localStorage.setItem('fh:longPressRate', String(value));
+  bus.emit('settings');
+  return value;
 }
 
 export function toggleThumbs() {

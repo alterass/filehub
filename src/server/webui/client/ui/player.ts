@@ -1,9 +1,16 @@
 // 视频播放器（xgplayer）：长按倍速（手机/鼠标通用）、播放列表切换
-import { icon } from '../util.js';
+import { icon, formatRate } from '../util.js';
 import { rawUrl, downloadUrl } from '../api.js';
+import { state, MAX_LONG_PRESS_RATE } from '../store.js';
 
 const LONG_PRESS_MS = 400;
-const LONG_PRESS_RATE = 2; // 长按加速倍率
+
+/** 当前生效的长按加速倍率（个人设置，默认 2x，最大 5x） */
+function longPressRate() {
+  const n = Number(state.longPressRate);
+  if (!Number.isFinite(n) || n < 1) return 2;
+  return Math.min(MAX_LONG_PRESS_RATE, n);
+}
 
 export function openPlayer(item, playlist = []) {
   const index = Math.max(0, playlist.findIndex((p) => p.id === item.id));
@@ -33,7 +40,7 @@ export function openPlayer(item, playlist = []) {
   const mount = ov.querySelector('.pl-mount');
   const badge = document.createElement('div');
   badge.className = 'pl-speed-badge';
-  badge.textContent = `▶▶ ${LONG_PRESS_RATE}x`;
+  badge.textContent = `▶▶ ${formatRate(longPressRate())}x`;
   mount.appendChild(badge);
 
   const Player = window.Player;
@@ -49,7 +56,7 @@ export function openPlayer(item, playlist = []) {
     playsinline: true,
     lang: 'zh-cn',
     fluid: true,
-    playbackRate: [0.5, 0.75, 1, 1.25, 1.5, 2],
+    playbackRate: [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5],
     pip: !('ontouchstart' in window),
   });
 
@@ -80,7 +87,7 @@ export function openPlayer(item, playlist = []) {
   const startFast = () => {
     fast = true;
     originRate = player.playbackRate || 1;
-    player.playbackRate = LONG_PRESS_RATE;
+    player.playbackRate = longPressRate();
     badge.classList.add('show');
     navigator.vibrate?.(30);
   };
