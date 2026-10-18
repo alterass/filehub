@@ -243,6 +243,8 @@ input::placeholder { color: color-mix(in srgb, var(--dim) 70%, transparent); }
   flex: 1; border: none; background: transparent; outline: none; min-width: 0;
 }
 .search-box .icon-btn { width: 26px; height: 26px; }
+/* type="search" 在 Chromium 下自带一个 ✕，与右侧自定义清除按钮重复：隐藏原生那个 */
+.search-box input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 .header-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
 #btnMenu { display: none; }
 .user-chip {
@@ -713,7 +715,7 @@ input::placeholder { color: color-mix(in srgb, var(--dim) 70%, transparent); }
   .header-actions { gap: 2px; }
   #btnUpload { display: none; }         /* 由 FAB 承担 */
   /* 移动端：顶栏操作统一收进汉堡菜单 */
-  #btnNewFolder, #btnView, #btnThumbs, #btnAdmin, #btnUser { display: none; }
+  #btnNewFolder, #btnView, #btnThumbs, #btnUser { display: none; }
   #btnMenu { display: inline-flex; }
   .search-box { max-width: none; min-width: 0; }
   .search-box input { font-size: 16px; } /* 防 iOS 聚焦缩放 */

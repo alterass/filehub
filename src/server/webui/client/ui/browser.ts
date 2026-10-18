@@ -36,7 +36,6 @@ function build(app) {
         <button id="btnNewFolder" class="icon-btn" title="新建文件夹">${icon('folderPlus')}</button>
         <button id="btnView" class="icon-btn" title="切换列表/网格"></button>
         <button id="btnThumbs" class="icon-btn" title=""></button>
-        <button id="btnAdmin" class="icon-btn" title="用户管理">${icon('users')}</button>
         <button id="btnUser" class="user-chip" title="账号">${icon('user')}<span></span></button>
         <button id="btnMenu" class="icon-btn" title="菜单">${icon('menu')}</button>
       </div>
@@ -69,7 +68,6 @@ function build(app) {
     toggleThumbs();
     toast(state.thumbs ? '图片以缩略图显示' : '图片以图标显示', 'info', 1500);
   });
-  $('#btnAdmin').addEventListener('click', openAdminPanel);
   $('#btnUser').addEventListener('click', userMenu);
   $('#btnMenu').addEventListener('click', mobileMenu);
   $('#btnRefresh').addEventListener('click', () => reload());
@@ -558,6 +556,5 @@ export function mountBrowser(app) {
   renderThumbsBtn();
   const chip = $('#btnUser span');
   if (chip) chip.textContent = state.user?.name || '';
-  $('#btnAdmin').style.display = state.user?.role === 'admin' ? '' : 'none';
   load();
 }
