@@ -18,6 +18,8 @@ import { ensurePosters } from '../poster.js';
 
 let root = null;
 let built = false;
+let dragItem = null;   // 正在拖拽的条目（内部拖拽移动）
+let dropEl = null;     // 当前高亮的放置目标行
 
 // ---------- 布局骨架 ----------
 
@@ -116,16 +118,85 @@ function build(app) {
     if (item) openMenuFor(item, e.clientX, e.clientY);
   });
 
-  // 拖拽上传
-  const area = $('.file-area');
-  let dragDepth = 0;
-  area.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; $('#dropHint').hidden = false; });
-  area.addEventListener('dragover', (e) => e.preventDefault());
-  area.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('#dropHint').hidden = true; } });
-  area.addEventListener('drop', (e) => {
+  // 拖拽 —— 区分「外部文件拖入」与「内部条目拖拽移动」
+  listEl.addEventListener('dragstart', (e) => {
+    const row = e.target.closest('[data-id]');
+    if (!row) return;
+    const item = state.items.find((i) => i.id === row.dataset.id);
+    if (!item) return;
+    dragItem = item;
+    e.dataTransfer.effectAllowed = 'move';
+    // 自定义类型标记内部拖拽；text/plain 兼容部分浏览器需写入数据才启动
+    e.dataTransfer.setData(DRAG_MIME, item.id);
+    e.dataTransfer.setData('text/plain', item.name);
+    row.classList.add('dragging');
+  });
+  listEl.addEventListener('dragend', () => {
+    dragItem = null;
+    clearDropTarget();
+    $$('.dragging').forEach((el) => el.classList.remove('dragging'));
+  });
+  listEl.addEventListener('dragover', (e) => {
+    const target = folderRowAt(e.target);
+    const internal = isInternalDrag(e);
+    const files = isFileDrag(e);
+    if (!target || (!internal && !files) || (internal && target.item.id === dragItem?.id)) {
+      clearDropTarget();
+      return;
+    }
+    e.preventDefault();       // 允许放置
+    e.dataTransfer.dropEffect = internal ? 'move' : 'copy';
+    setDropTarget(target.el);
+  });
+  listEl.addEventListener('dragleave', (e) => {
+    // 仍停留在同一目标内（移动到其子元素）时保留高亮
+    if (!dropEl || dropEl.contains(e.relatedTarget)) return;
+    clearDropTarget();
+  });
+  listEl.addEventListener('drop', async (e) => {
+    const target = folderRowAt(e.target);
+    const internal = isInternalDrag(e);
+    const files = isFileDrag(e);
+    if (!target || (!internal && !files)) return;
+    if (internal && (!dragItem || target.item.id === dragItem.id)) return;
     e.preventDefault();
-    dragDepth = 0;
+    e.stopPropagation();       // 已在本行处理，不走外层整区逻辑
+    clearDropTarget();
     $('#dropHint').hidden = true;
+
+    if (internal) {
+      // 内部拖拽 → 移动到目标文件夹
+      const dragged = dragItem;
+      dragItem = null;
+      try {
+        await api.move(dragged.id, target.item.id);
+        toast(`已移动到「${target.item.name}」`, 'ok');
+        reload();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    } else if (e.dataTransfer.files.length) {
+      // 外部文件拖入 → 上传到目标文件夹
+      enqueue([...e.dataTransfer.files], target.item.id);
+    }
+  });
+
+  // 外部文件拖拽上传（拖到文件区域空白处 = 上传到当前目录）
+  const area = $('.file-area');
+  area.addEventListener('dragover', (e) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    // 悬停在文件夹行上时由该行高亮提示，隐藏整区“上传到当前目录”提示
+    $('#dropHint').hidden = !!folderRowAt(e.target);
+  });
+  area.addEventListener('dragleave', (e) => {
+    if (!isFileDrag(e) || area.contains(e.relatedTarget)) return;
+    $('#dropHint').hidden = true;
+  });
+  area.addEventListener('drop', (e) => {
+    $('#dropHint').hidden = true;
+    if (!isFileDrag(e)) return; // 内部拖拽由列表处理，不当作上传
+    e.preventDefault();
     if (e.dataTransfer.files.length) enqueue([...e.dataTransfer.files], state.cwdId);
   });
 
@@ -219,7 +290,7 @@ function renderThumbsBtn() {
 
 function thumbImg(item, size) {
   // 图标垫底：缩略图加载中或失败时移除 img 即露出图标
-  return `${icon(kindOf(item).icon)}<img class="thumb-img" loading="lazy" src="${thumbUrl(item.id, size)}" onerror="this.remove()" alt="" />`;
+  return `${icon(kindOf(item).icon)}<img class="thumb-img" loading="lazy" src="${thumbUrl(item.id, size)}" onerror="this.remove()" draggable="false" alt="" />`;
 }
 
 /** 缩略图适用的文件：图片（原始/转码）与视频（抽帧封面） */
@@ -237,7 +308,7 @@ function rowHtml(item) {
       ? `<div class="ticon has-thumb">${thumbImg(item, 384)}</div>`
       : `<div class="ticon ${k.cls}">${icon(k.icon)}</div>`;
     return `
-      <div class="ftile" data-id="${item.id}" title="${item.name}">
+      <div class="ftile" data-id="${item.id}" title="${item.name}" draggable="true">
         ${ticon}
         <div class="tname">${item.name}</div>
       </div>`;
@@ -246,7 +317,7 @@ function rowHtml(item) {
     ? `<div class="ficon has-thumb">${thumbImg(item, 160)}</div>`
     : `<div class="ficon ${k.cls}">${icon(k.icon)}</div>`;
   return `
-    <div class="frow" data-id="${item.id}">
+    <div class="frow" data-id="${item.id}" draggable="true">
       ${ficon}
       <div class="fname"><span class="nt">${item.name}</span>${meta}</div>
       <div class="fsize">${item.type === 'file' ? formatSize(item.size) : '—'}</div>
@@ -274,6 +345,34 @@ function renderItems() {
 }
 
 // ---------- 交互 ----------
+
+/** 内部条目拖拽的 dataTransfer 类型标记（与外部文件拖入区分） */
+const DRAG_MIME = 'application/x-filehub-item';
+/** 拖拽来源是否为列表内部的条目 */
+const isInternalDrag = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes(DRAG_MIME);
+/** 拖拽来源是否为外部文件（操作系统或其他页面拖入的文件） */
+const isFileDrag = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files');
+
+/** 命中的文件夹行（仅 folder 类型）；否则 null */
+function folderRowAt(node) {
+  const row = node?.closest?.('[data-id]');
+  if (!row) return null;
+  const item = state.items.find((i) => i.id === row.dataset.id);
+  if (!item || item.type !== 'folder') return null;
+  return { el: row, item };
+}
+
+function setDropTarget(el) {
+  if (dropEl === el) return;
+  clearDropTarget();
+  dropEl = el;
+  el.classList.add('drop-target');
+}
+
+function clearDropTarget() {
+  if (dropEl) dropEl.classList.remove('drop-target');
+  dropEl = null;
+}
 
 /** 由扁平文件夹列表计算某文件夹自身及其全部子孙 id（移动时禁止选中的集合） */
 function descendantIds(folders, rootId) {

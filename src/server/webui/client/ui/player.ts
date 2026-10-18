@@ -50,9 +50,11 @@ export function openPlayer(item, playlist = []) {
     return () => {};
   }
 
-  // 移动端全屏：优先以屏幕长边作为主轴布局。触屏设备启用 rotateFullscreen，
-  // xgplayer 会根据当前 orientation 自动决定是否旋转 90°（横屏不旋转，竖屏旋转）。
-  const touchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  // 全屏策略（优先用 xgplayer 自带能力）：
+  //  - 设备判定用内置 Sniffer（基于 UA）：触屏笔记本仍算桌面，避免被误判为手机而旋转 90°。
+  //  - rotateFullscreen 仅移动端启用，桌面走原生全屏，方向不会错。
+  //  - 关闭「网页全屏」（cssFullscreen）：它只是把播放器放大到页面内，并非系统全屏。
+  const isMobile = Player.Sniffer ? Player.Sniffer.device === 'mobile' : ('ontouchstart' in window);
 
   player = new Player({
     el: mount,
@@ -62,8 +64,9 @@ export function openPlayer(item, playlist = []) {
     lang: 'zh-cn',
     fluid: true,
     playbackRate: [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5],
-    pip: !('ontouchstart' in window),
-    fullscreen: { rotateFullscreen: touchDevice },
+    pip: !isMobile,
+    cssFullscreen: false,          // 移除「网页全屏」，只保留系统全屏
+    fullscreen: { rotateFullscreen: isMobile },
   });
 
   const setTitle = () => {

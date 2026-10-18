@@ -357,6 +357,15 @@ input::placeholder { color: color-mix(in srgb, var(--dim) 70%, transparent); }
 .ftile:active { transform: translateY(-1px) scale(0.98); }
 .tname { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ---------- 拖拽移动 ---------- */
+.frow.dragging, .ftile.dragging { opacity: 0.45; }
+.frow.drop-target, .ftile.drop-target {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.ftile.drop-target { transform: none; }
+
 .empty { text-align: center; padding: 80px 0; color: var(--dim); }
 .empty .icon { width: 52px; height: 52px; opacity: 0.5; }
 .empty p { margin: 14px 0 4px; }
