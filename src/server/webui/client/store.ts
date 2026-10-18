@@ -17,6 +17,7 @@ export const state = {
   view: localStorage.getItem('fh:view') || 'list',       // list | grid
   thumbs: localStorage.getItem('fh:thumbs') !== 'off',   // 图片显示：true=缩略图(默认) false=图标
   longPressRate: readLongPressRate(),                    // 长按加速倍数（默认 2，最大 5）
+  thumbBust: 0,        // 缩略图缓存版本号：重建/清理后自增，用于让 <img> 绕过浏览器缓存
   cwdId: null,         // 当前目录 id（null = 根目录）
   cwdPath: [],         // 面包屑 [{id,name}]
   items: [],           // 当前目录内容

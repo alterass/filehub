@@ -14,7 +14,6 @@ import { openDocumentPreview, isDocumentPreviewable } from './preview.js';
 import { openAdminPanel } from './admin.js';
 import { openSettingsPanel } from './settings.js';
 import { enqueue } from '../uploads.js';
-import { ensurePosters } from '../poster.js';
 
 let root = null;
 let built = false;
@@ -290,7 +289,9 @@ function renderThumbsBtn() {
 
 function thumbImg(item, size) {
   // 图标垫底：缩略图加载中或失败时移除 img 即露出图标
-  return `${icon(kindOf(item).icon)}<img class="thumb-img" loading="lazy" src="${thumbUrl(item.id, size)}" onerror="this.remove()" draggable="false" alt="" />`;
+  // thumbBust：手动重建/清理缩略图后追加时间戳，绕过浏览器对 /thumb 的长缓存
+  const bust = state.thumbBust ? `&t=${state.thumbBust}` : '';
+  return `${icon(kindOf(item).icon)}<img class="thumb-img" loading="lazy" src="${thumbUrl(item.id, size)}${bust}" onerror="this.remove()" draggable="false" alt="" />`;
 }
 
 /** 缩略图适用的文件：图片（原始/转码）与视频（抽帧封面） */
@@ -340,8 +341,6 @@ function renderItems() {
   }
   empty.hidden = true;
   listEl.innerHTML = state.items.map(rowHtml).join('');
-  // 视频封面：首次渲染时对无封面视频批量抽帧（缩略图模式下才做）
-  if (state.thumbs) ensurePosters(state.items);
 }
 
 // ---------- 交互 ----------

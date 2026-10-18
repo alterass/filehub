@@ -73,6 +73,11 @@ export const api = {
   move: (id, parentId) => request('PATCH', `/api/files/${id}`, { parentId }),
   remove: (id) => request('DELETE', `/api/files/${id}`),
   folders: () => request('GET', '/api/files/folders'),
+  // 缩略图维护（仅管理员）
+  thumbStatus: () => request('GET', '/api/files/thumbs/status'),
+  thumbRebuild: (mode) => request('POST', '/api/files/thumbs/rebuild', { mode }),
+  thumbCancel: () => request('POST', '/api/files/thumbs/rebuild/cancel'),
+  thumbClean: () => request('POST', '/api/files/thumbs/clean'),
   // 管理
   adminListUsers: () => request('GET', '/api/admin/users'),
   adminAddUser: (d) => request('POST', '/api/admin/users', d),

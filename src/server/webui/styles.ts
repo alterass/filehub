@@ -595,6 +595,17 @@ input::placeholder { color: color-mix(in srgb, var(--dim) 70%, transparent); }
   background: var(--panel-2); color: var(--dim);
   font-size: 12px; word-break: break-all; user-select: text;
 }
+/* 缩略图维护（仅管理员） */
+.thumb-stats {
+  padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel-2); color: var(--dim); font-size: 12px; margin-bottom: 10px;
+}
+.thumb-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.thumb-progress { margin-top: 12px; }
+.thumb-bar { height: 6px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
+.thumb-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.3s; }
+.thumb-progress-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.thumb-progress-row span { color: var(--dim); font-size: 12px; word-break: break-all; }
 
 /* ---------- 音频播放器 ---------- */
 .audio-overlay { display: flex; align-items: center; justify-content: center; padding: 24px; }

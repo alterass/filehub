@@ -1,16 +1,18 @@
 import type { Context } from 'hono';
 import type { FileHubModule } from '../../core/registry.js';
-import { badRequest, notFound } from '../../core/errors.js';
-import { isImageName, unsafeToInline } from '../../core/mime.js';
-import { FilesService } from './service.js';
+import { badRequest, forbidden, notFound } from '../../core/errors.js';
+import { isImageName, isVideoName, unsafeToInline } from '../../core/mime.js';
+import { FilesService, type NodeInfo } from './service.js';
+import { DEFAULT_THUMB_SIZE, getThumb, THUMB_SIZES } from './thumb.js';
 import {
-  DEFAULT_THUMB_SIZE,
-  getThumb,
-  isVideoPosterSource,
-  readVideoPoster,
-  saveVideoPoster,
-  THUMB_SIZES,
-} from './thumb.js';
+  cancelThumbRebuild,
+  cleanStaleThumbs,
+  getThumbJob,
+  startThumbRebuild,
+  thumbCacheStats,
+  toNode,
+  walkMedia,
+} from './thumb-cache.js';
 
 function parseRangeHeader(range: string | undefined, size: number): { start: number; end: number } | 'invalid' | null {
   if (!range) return null;
@@ -47,18 +49,21 @@ export const filesModule: FileHubModule = {
     // 相对路径 → 节点 id（与 FilesService 一致）
     const svcIdOf = (rel: string) => Buffer.from(rel, 'utf8').toString('base64url');
 
-    // 启动预扫：为已有图片补齐默认尺寸缩略图（异步执行，不阻塞启动）
+    /** 缩略图维护仅管理员可用（会影响全库、且重建很吃 CPU/磁盘） */
+    const requireAdmin = (c: Context) => {
+      if (c.get('user')?.role !== 'admin') throw forbidden('仅管理员可执行缩略图维护操作');
+    };
+
+    // 启动预扫：为已有图片补齐默认尺寸缩略图（异步执行，不阻塞启动）。
+    // 触发时机仅此一次 + 上传事件 + 首次浏览的按需生成；日常刷新页面只会命中缓存。
+    // 视频不预扫：抽帧成本高，改为首次浏览 /thumb 时按需生成并缓存。
     void (async () => {
       try {
-        const images = await scanImages();
+        const images = walkMedia(ctx.storage).filter((f) => f.kind === 'image');
         let made = 0;
-        for (const rel of images) {
-          const node = await svc.getNode(svcIdOf(rel));
-          const cached = await ctx.storage.readThumb(node.id, DEFAULT_THUMB_SIZE);
-          if (!cached) {
-            const result = await getThumb(ctx.storage, node, DEFAULT_THUMB_SIZE);
-            if (result) made++;
-          }
+        for (const file of images) {
+          if (await ctx.storage.hasThumb(file.id, DEFAULT_THUMB_SIZE)) continue;
+          if (await getThumb(ctx.storage, toNode(file), DEFAULT_THUMB_SIZE)) made++;
         }
         if (images.length) {
           console.log(`[thumbs] 启动检查：${images.length} 张图片，补齐 ${made} 张缩略图 → ${ctx.config.thumbDir}`);
@@ -68,35 +73,38 @@ export const filesModule: FileHubModule = {
       }
     })();
 
-    // 新文件落地后异步补齐缩略图索引（图片即时生成；视频封面由前端抽帧回传）
+    // 新文件落地后异步补齐缩略图索引：图片直接解码，视频用 ffmpeg 抽帧
     ctx.bus.on('files:uploaded', ({ row }) => {
-      const node = row as { name: string; id: string } | undefined;
-      if (!node?.name || !isImageName(node.name) || unsafeToInline(node.name)) return;
-      void getThumb(ctx.storage, node as never, DEFAULT_THUMB_SIZE).catch(() => {});
+      const node = row as NodeInfo | undefined;
+      if (!node?.name || node.type !== 'file') return;
+      if (!isImageName(node.name) && !isVideoName(node.name)) return;
+      void getThumb(ctx.storage, node, DEFAULT_THUMB_SIZE).catch(() => {});
     });
 
-    async function scanImages(): Promise<string[]> {
-      const { readdirSync } = await import('node:fs');
-      const out: string[] = [];
-      const walk = (rel: string, depth: number): void => {
-        if (depth > 6) return;
-        const abs = ctx.storage.absPath(rel);
-        let entries: import('node:fs').Dirent[];
-        try {
-          entries = readdirSync(abs, { withFileTypes: true });
-        } catch {
-          return;
-        }
-        for (const e of entries) {
-          if (e.name.startsWith('.filehub')) continue;
-          const childRel = rel ? `${rel}/${e.name}` : e.name;
-          if (e.isDirectory()) walk(childRel, depth + 1);
-          else if (isImageName(e.name) && !unsafeToInline(e.name)) out.push(childRel);
-        }
-      };
-      walk('', 0);
-      return out;
-    }
+    // ---- 缩略图维护（仅管理员）：统计 / 补齐·重建（后台任务）/ 停止 / 清理过时缓存 ----
+    // 静态路径必须注册在 /:id 之前，避免被参数路由抢匹配
+    app.get('/api/files/thumbs/status', async (c) => {
+      requireAdmin(c);
+      const stats = await thumbCacheStats(ctx.storage);
+      return c.json({ ...stats, dir: ctx.storage.thumbDirPath(), job: getThumbJob() });
+    });
+
+    app.post('/api/files/thumbs/rebuild', async (c) => {
+      requireAdmin(c);
+      const body = await c.req.json().catch(() => null);
+      const mode = body?.mode === 'force' ? 'force' : 'missing';
+      return c.json(startThumbRebuild(ctx.storage, mode), 202);
+    });
+
+    app.post('/api/files/thumbs/rebuild/cancel', (c) => {
+      requireAdmin(c);
+      return c.json({ job: cancelThumbRebuild() });
+    });
+
+    app.post('/api/files/thumbs/clean', async (c) => {
+      requireAdmin(c);
+      return c.json(await cleanStaleThumbs(ctx.storage));
+    });
 
     // ---- 目录浏览 ----
     app.get('/api/files/list', async (c) => {
@@ -165,20 +173,6 @@ export const filesModule: FileHubModule = {
       return c.json(node);
     });
 
-    // ---- 视频封面：前端抽帧后回传（POST），或读取已缓存封面（GET 内嵌在 thumb 接口）----
-    app.post('/api/files/:id/poster', async (c) => {
-      const node = await svc.getNode(c.req.param('id'));
-      const body = await c.req.json().catch(() => null);
-      const dataUrl = typeof body?.dataUrl === 'string' ? body.dataUrl : '';
-      const m = /^data:image\/jpeg;base64,(.+)$/.exec(dataUrl);
-      if (!m) throw badRequest('需要 image/jpeg 的 dataUrl');
-      const requested = Number(c.req.query('s'));
-      const size = THUMB_SIZES.includes(requested) ? requested : DEFAULT_THUMB_SIZE;
-      const ok = await saveVideoPoster(ctx.storage, node.id, size, m[1]);
-      if (!ok) throw badRequest('封面保存失败');
-      return c.json({ ok: true });
-    });
-
     // ---- 下载 ----
     app.get('/api/files/:id/download', async (c) => {
       const node = await svc.getNode(c.req.param('id'));
@@ -234,24 +228,19 @@ export const filesModule: FileHubModule = {
       });
     });
 
-    // ---- 缩略图（生成 + 缓存；视频优先返回已缓存封面，否则回退原图/原视频）----
+    // ---- 缩略图（生成 + 缓存）：图片用 Skia 缩放，视频用 ffmpeg 抽帧 ----
     app.get('/api/files/:id/thumb', async (c) => {
       const node = await svc.getNode(c.req.param('id'));
       if (node.type !== 'file') throw notFound('文件夹没有缩略图');
       const requested = Number(c.req.query('s'));
       const size = THUMB_SIZES.includes(requested) ? requested : DEFAULT_THUMB_SIZE;
-      if (isVideoPosterSource(node.name)) {
-        const poster = await readVideoPoster(ctx.storage, node.id, size);
-        if (poster) {
-          return new Response(poster, {
-            status: 200,
-            headers: { 'content-type': 'image/jpeg', 'cache-control': 'private, max-age=604800' },
-          });
-        }
+      const thumb = await getThumb(ctx.storage, node, size);
+      if (!thumb) {
+        // 视频不能像图片那样 302 回退原文件：浏览器不会在 <img> 里渲染视频，
+        // 直接 404，让前端 onerror 回落到图标（也避免白拉一个几十 MB 的视频）。
+        if (isVideoName(node.name)) return new Response(null, { status: 404 });
         return c.redirect(`/api/files/${node.id}/raw`, 302);
       }
-      const thumb = await getThumb(ctx.storage, node, size);
-      if (!thumb) return c.redirect(`/api/files/${node.id}/raw`, 302);
       return new Response(thumb.buffer, {
         status: 200,
         headers: {

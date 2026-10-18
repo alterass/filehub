@@ -77,25 +77,74 @@ export class LocalStorage {
     return { stream: Readable.toWeb(nodeStream) as ReadableStream, size: fileSize };
   }
 
-  // ---------- 缩略图缓存：<thumbDir>/<kind><nodeId>.<size>.jpg ----------
-  // kind: '' 图片缩略图；'v_' 视频封面（避免 Windows 文件名禁止的冒号）
+  // ---------- 缩略图缓存：<thumbDir>/<cacheId>.<size>.jpg ----------
+  // cacheId 由调用方给出：图片缩略图直接用 nodeId，视频封面加 'v_' 前缀区分
+  // （两类都由服务端生成，见 modules/files/thumb.ts）
 
-  private thumbPath(nodeId: string, size: number): string {
-    return join(this.thumbDir, `${nodeId}.${size}.jpg`);
+  private thumbPath(cacheId: string, size: number): string {
+    return join(this.thumbDir, `${cacheId}.${size}.jpg`);
   }
 
-  async readThumb(nodeId: string, size: number): Promise<Buffer | null> {
+  async readThumb(cacheId: string, size: number): Promise<Buffer | null> {
     try {
-      return await readFile(this.thumbPath(nodeId, size));
+      return await readFile(this.thumbPath(cacheId, size));
     } catch {
       return null;
     }
   }
 
-  async writeThumb(nodeId: string, size: number, data: Buffer): Promise<void> {
-    const target = this.thumbPath(nodeId, size);
+  async writeThumb(cacheId: string, size: number, data: Buffer): Promise<void> {
+    const target = this.thumbPath(cacheId, size);
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, data);
+  }
+
+  /** 缩略图是否已缓存（只看存在性，不读内容 —— 避免为了判断白读一个大文件） */
+  async hasThumb(cacheId: string, size: number): Promise<boolean> {
+    try {
+      return (await stat(this.thumbPath(cacheId, size))).isFile();
+    } catch {
+      return false;
+    }
+  }
+
+  /** 缓存目录路径（维护接口用于展示/日志） */
+  thumbDirPath(): string {
+    return this.thumbDir;
+  }
+
+  /** 列出缓存目录里的全部文件（含非预期的残留文件），供统计与清理 */
+  async listThumbFiles(): Promise<Array<{ name: string; bytes: number; mtimeMs: number }>> {
+    let names: string[];
+    try {
+      names = await readdir(this.thumbDir);
+    } catch {
+      return []; // 目录还不存在
+    }
+    const out: Array<{ name: string; bytes: number; mtimeMs: number }> = [];
+    for (const name of names) {
+      try {
+        const s = await stat(join(this.thumbDir, name));
+        if (s.isFile()) out.push({ name, bytes: s.size, mtimeMs: s.mtimeMs });
+      } catch {
+        // 并发删除等情况：跳过
+      }
+    }
+    return out;
+  }
+
+  /** 按文件名批量删除缓存文件，返回实际删除数量 */
+  async removeThumbFiles(names: string[]): Promise<number> {
+    let removed = 0;
+    for (const name of names) {
+      try {
+        await rm(join(this.thumbDir, name), { force: true });
+        removed++;
+      } catch {
+        // 忽略：可能已被并发删除
+      }
+    }
+    return removed;
   }
 
   /** 节点删除时同步清理其全部尺寸的缩略图 */

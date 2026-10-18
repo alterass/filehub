@@ -7,7 +7,7 @@
 - 电脑/手机双模式界面（响应式 + 手动切换）
 - 图片灯箱预览（缩放/双指捏合/滑动切换）、视频播放（xgplayer，**长按加速，倍速可在个人设置中调整：默认 2x，最高 5x**）
 - 文档预览：PDF（浏览器内嵌）/ EPUB / Markdown / 纯文本；音频在线播放（原生播放器，支持播放列表）
-- 图片缩略图：服务端生成 JPEG 并缓存（jimp，纯 JS 无原生依赖），WebUI 可在「缩略图/图标」间切换，默认缩略图
+- 图片/视频缩略图：服务端生成 JPEG 并缓存（图片走 @napi-rs/canvas(Skia) 解码，视频用自带 ffmpeg 抽帧，黑屏帧自动跳过），WebUI 可在「缩略图/图标」间切换，默认缩略图；设置页可手动补齐/重建/清理缓存（仅管理员）
 - 模块化架构，符合开放封闭原则：新增功能不改核心代码
 
 ## 快速开始
@@ -72,8 +72,31 @@ filehub.sh --port 9000             # Linux / macOS
 `-p/--port`、`-h/--help`）。
 
 > 分发时请把整个项目目录（含 `node_modules/`、`sql/`、`dist/`）一起交付：服务端在运行时
-> 需要 `node_modules`（hono/pglite/jimp 等）以及 `node_modules/xgplayer` 的浏览器端产物，
-> 迁移 SQL 从项目根目录的 `sql/` 读取。目标机器需安装 Node.js ≥ 20.11。
+> 需要 `node_modules`（hono/pglite/@napi-rs/canvas/ffmpeg-static 等）以及 `node_modules/xgplayer`
+> 的浏览器端产物，迁移 SQL 从项目根目录的 `sql/` 读取。目标机器需安装 Node.js ≥ 20.11。
+
+### 关于 ffmpeg（视频封面）
+
+视频封面由服务端用 ffmpeg 抽帧生成，ffmpeg 二进制来自 `ffmpeg-static` 依赖（安装时按平台
+下载，Windows/Linux/macOS 各约 80MB），不需要使用者另外装 ffmpeg。
+
+- **装不上/下载慢**：`ffmpeg-static` 默认从 GitHub Releases 拉二进制。GitHub 不可达时用镜像
+  重装即可（npmmirror 有完整同步）：
+  ```bash
+  # Windows PowerShell
+  $env:FFMPEG_BINARIES_URL='https://cdn.npmmirror.com/binaries/ffmpeg-static'; pnpm install
+  # Linux / macOS
+  FFMPEG_BINARIES_URL='https://cdn.npmmirror.com/binaries/ffmpeg-static' pnpm install
+  ```
+  npm 用户把 `pnpm install` 换成 `npm install` 即可。若已经装过、只是缺二进制，
+  用 `pnpm rebuild ffmpeg-static`（npm：`npm rebuild ffmpeg-static`）重跑一次安装脚本。
+- **pnpm 用户注意**：pnpm 默认拦截依赖的安装脚本，而 ffmpeg 二进制正是由
+  `ffmpeg-static` 的 install 脚本下载的。本项目已在 `pnpm-workspace.yaml` 的
+  `allowBuilds` 里放行 `ffmpeg-static`（缺失时按 pnpm 提示 `pnpm approve-builds` 放行即可），
+  否则装完会发现 `node_modules/ffmpeg-static/ffmpeg.exe` 不存在，视频封面全部生产不出来。
+- **想用自己的 ffmpeg**：设置环境变量 `FILEHUB_FFMPEG=/path/to/ffmpeg` 可覆盖内置二进制
+  （优先级最高），其次是 `ffmpeg-static` 内置二进制，最后回退到 PATH 里的 `ffmpeg`。
+- 注：`ffmpeg-static` 分发的 ffmpeg 为 GPL 许可，商用分发前请留意。
 
 ## 公网访问（Cloudflare Tunnel）
 
@@ -162,7 +185,7 @@ sudo cloudflared service install     # macOS / Linux
 │   ├── config.json             配置（host/port/jwtSecret/sessionDays）
 │   ├── sql/                    迁移 SQL
 │   ├── data/                   PGlite 数据库（仅存用户账号）
-│   ├── .cache/                 缩略图缓存
+│   ├── .cache/                 缩略图 / 视频封面缓存
 │   ├── uploads/tmp/            上传中转（落盘后立即 rename 到目标位置）
 │   └── modules/               外部模块（*.js，启动时自动加载）—— 功能扩展点
 ├── 你的文件/…                  任意真实文件/目录，直接可见
@@ -228,10 +251,50 @@ html/js/css 文件，xgplayer 等第三方产物也在启动时读入并内联�
 - 文档预览：PDF 用 iframe 调用浏览器原生 PDF 查看器；EPUB 由前端解包渲染；Markdown 经
   marked + DOMPurify 渲染；TXT 按 UTF-8/GB18030 解码后展示
 - 音频播放：HTML5 `<audio>` 原生播放器，支持播放列表切换、上一首/下一首与下载
-- 缩略图接口 `GET /api/files/:id/thumb?s=160|384|768`，支持 jpeg/png/gif/bmp/tiff，
-  其余格式自动 302 回退原图
-- 缩略图缓存位于 **工作目录 `.cache/`**（可配置 `thumbDir`），该目录在列表/搜索中被忽略；
-  启动时后台预扫补齐缺失缩略图，新图片上传后经事件总线自动生成索引
+- 缩略图接口 `GET /api/files/:id/thumb?s=160|384|768`：图片支持 png/jpeg/gif/webp/bmp/ico/avif/svg
+  （heic/tiff 等无法解码的自动 302 回退原图）；视频由服务端 ffmpeg 抽帧生成封面，
+  抽帧失败返回 404，前端回落到图标（不会去拉整个视频文件）
+- 视频封面抽到全黑帧会自动往后换点位重试（黑屏片头/淡入很常见），全片皆黑时才退回黑封面
+- 缩略图/视频封面缓存位于 **工作目录 `.filehub/.cache`**（可配置 `thumbDir`），该目录在列表/搜索中被忽略
+
+### 缩略图的生成时机
+
+只有当「缓存里还没有」时才会真正生成；日常刷新页面/切换视图只命中缓存，不会重复解码或抽帧：
+
+| 时机 | 范围 | 说明 |
+| --- | --- | --- |
+| 服务启动后 | 图片（384 档） | 后台异步预扫补齐缺失项，不阻塞启动；**不是**查数据库索引——真实目录模式下节点由文件系统推导，此处是按 `MAX_SCAN_DEPTH` 下钻遍历工作目录 |
+| 新文件上传后 | 该图片/视频（384 档） | `files:uploaded` 事件触发，异步生成 |
+| 首次浏览某个目录 | 该目录可见条目（列表 160 / 网格 384） | `/thumb` 请求按需生成并落盘缓存；同一 (文件,尺寸) 只生成一次 |
+| 设置页手动触发 | 全库（160 + 384） | 仅管理员，见下（后台任务） |
+
+> 视频**不参与启动预扫**（抽帧成本高），改为首次浏览时按需生成。
+> 生成失败会记入内存失败表（10 分钟），期间同一项不再重跑 ffmpeg/解码——
+> 避免一个坏视频在每次刷新页面时都被反复尝试；手动重建会清空该表以便重试。
+
+### 缩略图维护（设置页，仅管理员）
+
+账号菜单 → 个人设置 → **缩略图维护**（`role=admin` 才显示）：
+
+- **补齐缺失**：只生成还没有的缩略图（不动已有缓存）
+- **全部重建**：重新解码/抽帧并覆盖已有缓存，用于修复黑屏封面或损坏缩略图；
+  服务端后台任务，面板显示 `已完成/总数` 进度，可随时「停止」，也可关掉面板继续跑
+- **清理过时**：删除以下缓存文件，返回各类计数 ——
+  源文件已不存在、源文件已被修改（源 mtime 晚于缓存）、类型已不再适用（不再是图片/视频）、
+  无效残留（尺寸不在白名单、写入中断的临时文件等）
+
+对应接口（均仅管理员，未登录 401 / 非管理员 403）：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/files/thumbs/status` | 缓存条目数/占用字节/目录 + 当前任务进度 |
+| POST | `/api/files/thumbs/rebuild` | body `{ mode: 'missing' \| 'force' }`，返回 202；已有任务在跑返回 409 |
+| POST | `/api/files/thumbs/rebuild/cancel` | 请求停止当前任务 |
+| POST | `/api/files/thumbs/clean` | 清理过时缓存并返回 `{ scanned, removed, freedBytes, reasons }` |
+
+> 重建/清理完成后前端会自动给缩略图 URL 追加时间戳并重载列表，
+> 否则浏览器会拿 `max-age=604800` 的旧缓存继续显示重建前的图。
+
 
 ## 安全说明
 
@@ -245,7 +308,14 @@ html/js/css 文件，xgplayer 等第三方产物也在启动时读入并内联�
 ## 已验证
 
 - API 冒烟：认证全流程、上传/下载、Range（206/416/后缀区间）、重命名/移动/递归删除、搜索、管理员接口鉴权（403）、多用户数据隔离
-- 真实目录模式：外部放入工作目录的文件/文件夹立即在 WebUI 可见；上传/重命名/移动/删除直接作用于磁盘；`.filehub/` 系统目录自动隐藏；缩略图（外部图片同样支持）缓存于 `.filehub/.cache`
+- 真实目录模式：外部放入工作目录的文件/文件夹立即在 WebUI 可见；上传/重命名/移动/删除直接作用于磁盘；`.filehub/` 系统目录自动隐藏；缩略图与视频封面（外部文件同样支持）缓存于 `.filehub/.cache`
+- 缩略图链路（@napi-rs/canvas + ffmpeg-static）：大图缩放/小图原样直通/透明区铺白/SVG 栅格化/损坏文件回退原图、
+  视频抽帧与竖屏方向、160|384|768 各档、缓存命中与并发合并，以及 `/thumb` 的 200/302/404 分支均实测通过
+- 视频封面黑帧处理：黑屏片头视频实测能自动往后取到正常帧（封面平均亮度 128，不再是 0）；
+  全片皆黑的视频仍会给出封面；失败记忆生效（换掉坏文件后不立即重试，`resetThumbFailures` 后恢复）
+- 缩略图维护：清理的四类口径（无源文件/源已修改/类型不符/无效残留）计数与保留项均实测正确（含视频 `v_` 前缀不被误判）；
+  后台补齐与全部重建任务按「媒体数 × 2 档尺寸」推进并可停止；重建能覆盖旧的纯黑封面
+- 维护接口权限：未登录 401、普通用户 403（status/rebuild/clean 三者一致）、管理员可用，且 `thumbs/*` 静态路由未被 `/:id` 抢匹配
 - GUI 实测（Chromium）：登录/登出、文件浏览、图片灯箱、真实 mp4 播放、长按加速（个人设置）、手机模式、模式切换、搜索、用户管理面板、个人设置页展示工作目录、PDF/Markdown/TXT/音频预览
 - WebUI：hono JSX renderer 单文档页面（全内联，零外部引用）
 - serve 脚本：`npm run serve -- --workdir/-H/-p` 实测（自动初始化、指定端口、health 正常）
