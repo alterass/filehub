@@ -71,9 +71,10 @@ filehub.sh --port 9000             # Linux / macOS
 脚本通过自身所在目录定位 `server/cli.js`，参数全部透传（`--workdir/--dir`、`-H/--host`、
 `-p/--port`、`-h/--help`）。
 
-> 分发时请把整个项目目录（含 `node_modules/`、`sql/`、`dist/`）一起交付：服务端在运行时
+> 分发时请把整个项目目录（含 `node_modules/`、`dist/`）一起交付：服务端在运行时
 > 需要 `node_modules`（hono/pglite/@napi-rs/canvas/ffmpeg-static 等）以及 `node_modules/xgplayer`
-> 的浏览器端产物，迁移 SQL 从项目根目录的 `sql/` 读取。目标机器需安装 Node.js ≥ 20.11。
+> 的浏览器端产物；迁移 SQL 已随构建一并拷入 `dist/sql/`（`bundledSqlDir` 优先读这里，
+> 无需再单独保留仓库根的 `sql/`）。目标机器需安装 Node.js ≥ 20.11。
 
 ### 关于 ffmpeg（视频封面）
 
@@ -97,6 +98,28 @@ filehub.sh --port 9000             # Linux / macOS
 - **想用自己的 ffmpeg**：设置环境变量 `FILEHUB_FFMPEG=/path/to/ffmpeg` 可覆盖内置二进制
   （优先级最高），其次是 `ffmpeg-static` 内置二进制，最后回退到 PATH 里的 `ffmpeg`。
 - 注：`ffmpeg-static` 分发的 ffmpeg 为 GPL 许可，商用分发前请留意。
+
+## 作为命令行工具安装（npm）
+
+本项目已声明 `bin`（`filehub` → `dist/server/cli.js`，顶部带 shebang），可直接作为命令安装，
+依赖由 npm 自动安装，**无需手动 `npm ci`**：
+
+```bash
+npm i -g filehub        # 全局安装，之后在任意目录执行 filehub --workdir ...
+npx filehub             # 免安装试用
+```
+
+只在内网/离线环境分发时，也可以打成 tarball 传递（`prepack` 会自动先构建）：
+
+```bash
+npm pack                       # 生成 filehub-0.1.0.tgz（只含 dist/）
+npm i -g ./filehub-0.1.0.tgz   # 对方本地安装
+```
+
+> 安装体积主要来自 `ffmpeg-static`（安装时下载，约 80MB）与 `@napi-rs/canvas` 的平台二进制；
+> 国内装 ffmpeg 二进制见上一节「关于 ffmpeg」的镜像说明。
+> 发布到公开 registry 前，请确认 `package.json` 未保留 `private`（当前已移除），并确保 `files`
+> 只包含 `dist/`（迁移 SQL 在 `dist/sql/`，不需要额外白名单）。
 
 ## 公网访问（Cloudflare Tunnel）
 

@@ -3,7 +3,12 @@
   "version": "0.1.0",
   "description": "LAN-first personal cloud storage: WebUI, Node.js + TypeScript + Hono + PGlite + Drizzle",
   "type": "module",
-  "private": true,
+  "bin": {
+    "filehub": "dist/server/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=20.11"
   },
@@ -13,6 +18,7 @@
     "dev": "node scripts/build-webui.mjs && tsx watch src/server/main.ts",
     "preserve": "npm run build",
     "serve": "node dist/server/cli.js",
+    "prepack": "npm run build",
     "prestart": "npm run build",
     "start": "node dist/server/cli.js"
   },

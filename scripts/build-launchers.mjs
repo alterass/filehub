@@ -5,7 +5,7 @@
 //   - 把 dist/ 加入 PATH 后，可直接用 `filehub` / `filehub.sh` 启动；
 //   - 参数原样转发（%* / "$@"），支持 --dir/--host/--port 等全部参数。
 // 由 package.json 的 build 脚本在 tsc 编译之后调用。
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -55,4 +55,9 @@ try {
 } catch {}
 writeFileSync(join(dist, 'package.json'), JSON.stringify(PKG, null, 2) + '\n');
 
+// 随产物分发迁移 SQL：运行时的 bundledSqlDir 优先读 dist/sql，
+// 这样分发/镜像只需 dist/ + node_modules/，不再依赖仓库根的 sql/。
+cpSync(join(root, 'sql'), join(dist, 'sql'), { recursive: true });
+
 console.log('[build:launchers] 已生成 dist/filehub.bat + dist/filehub.sh');
+console.log('[build:launchers] 已同步 sql/ -> dist/sql');

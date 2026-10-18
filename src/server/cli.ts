@@ -1,8 +1,10 @@
+#!/usr/bin/env node
 // FileHub 命令行入口（编译为 dist/server/cli.js）。
 // 参数解析的唯一事实来源：npm 脚本（npm run serve / npm start）与分发目录里的
 // filehub.bat / filehub.sh 都委托到这里，避免同一套参数在多处维护。
-import { resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+// 顶部 shebang 使该文件可作为 npm bin（全局安装后的 `filehub` 命令）直接执行。
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { startServer } from './index.js';
 
 const USAGE = `
@@ -119,7 +121,17 @@ export async function runCli(args: string[]): Promise<void> {
   process.on('SIGTERM', shutdown);
 }
 
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
-if (isMain) {
+// 是否作为入口直接执行。npm 全局安装时（类 Unix）bin 是软链接，argv[1] 是链接路径，
+// 而 import.meta.url 已被 Node 解析为真实路径，直接比较会不相等 —— 故比较 realpath。
+function isMainModule(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) {
   await runCli(process.argv.slice(2));
 }

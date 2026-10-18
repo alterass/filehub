@@ -1,30 +1,30 @@
 // WebUI 模块：hono JSX renderer 渲染单文档页面，样式与脚本全部内联（无静态 html/js 文件）
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { jsxRenderer } from 'hono/jsx-renderer';
 import { Page } from './page.js';
 import { APP_CSS } from './styles.js';
 import { CLIENT_BUNDLE } from './client-bundle.gen.js';
-import { projectRoot } from '../core/paths.js';
 import type { CoreContext, FileHubModule } from '../core/registry.js';
 
-function readIfExists(...paths: string[]): string {
-  for (const p of paths) {
-    try {
-      if (existsSync(p)) return readFileSync(p, 'utf8');
-    } catch {
-      // 尝试下一个候选路径
-    }
-  }
-  return '';
-}
-
-/** xgplayer 浏览器端产物：直接从 node_modules 读取并内联 */
+/**
+ * xgplayer 浏览器端产物：读取并内联进页面。
+ * 用模块解析（createRequire）而不是拼 `projectRoot()/node_modules` 路径 —— 这样在
+ * 全局安装、依赖被提升（hoist）到上层 node_modules 时依然能定位到（xgplayer 无 exports
+ * 限制，可直接解析 dist 子路径）。缺包时返回空串，页面只是没有播放器脚本，不影响启动。
+ */
 function readVendor(): { css: string; js: string } {
-  const xgDist = join(projectRoot(), 'node_modules', 'xgplayer', 'dist');
+  const req = createRequire(import.meta.url);
+  const read = (id: string): string => {
+    try {
+      return readFileSync(req.resolve(id), 'utf8');
+    } catch {
+      return '';
+    }
+  };
   return {
-    js: readIfExists(join(xgDist, 'index.min.js')),
-    css: readIfExists(join(xgDist, 'index.min.css')),
+    js: read('xgplayer/dist/index.min.js'),
+    css: read('xgplayer/dist/index.min.css'),
   };
 }
 

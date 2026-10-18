@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +10,16 @@ const moduleDir = dirname(fileURLToPath(import.meta.url));
 
 /** 项目根目录：src/server/core（开发）或 dist/server/core（编译产物）向上三级 */
 export const projectRoot = (): string => resolve(moduleDir, '..', '..', '..');
+
+/**
+ * 随包分发的迁移 SQL 目录。优先用构建时拷进 dist/ 的副本（dist/sql，随产物一起分发，
+ * 分发/镜像只需 dist/ + node_modules/）；开发模式（tsx 直接跑 src/）下该副本不存在，
+ * 回退到仓库根的 sql/。两者都不在时返回回退路径，交由调用方按目录不存在处理。
+ */
+const bundledSqlDir = (): string => {
+  const staged = resolve(moduleDir, '..', '..', 'sql'); // dist/server/core -> dist/sql
+  return existsSync(staged) ? staged : join(projectRoot(), 'sql');
+};
 
 export interface AppPaths {
   /** 工作目录（用户可见的网盘根目录） */
@@ -40,7 +51,7 @@ export function resolvePaths(workDir: string = FILEHUB_HOME): AppPaths {
     metaDir,
     configFile: join(metaDir, 'config.json'),
     sqlDir: join(metaDir, 'sql'),
-    bundledSqlDir: join(projectRoot(), 'sql'),
+    bundledSqlDir: bundledSqlDir(),
     dataDir: join(metaDir, 'data'),
     thumbDir: join(metaDir, '.cache'),
     modulesDir: join(metaDir, 'modules'),
