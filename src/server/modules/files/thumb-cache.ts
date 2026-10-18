@@ -1,17 +1,19 @@
-// 缩略图缓存的维护逻辑：全库补齐/重建（后台任务 + 进度）与过期缓存清理。
-// 生成本身仍由 thumb.ts 负责，这里只管「什么时候生成、哪些缓存该丢」。
-import { readdirSync, statSync, type Dirent } from 'node:fs';
+// 缩略图的任务化维护：所有「建立/重建」都排进这里统一执行，
+// 不再由 HTTP 请求触发生成 —— 否则打开一个有几百个未缓存视频的目录会并发拉出
+// 几十个 ffmpeg，把 CPU 打满。这里同时负责缓存清理。
+import { statSync, type Dirent } from 'node:fs';
+import { readdir } from 'node:fs/promises';
 import { basename } from 'node:path';
 import type { LocalStorage } from '../../core/storage.js';
 import type { NodeInfo } from './service.js';
 import { isImageName, isVideoName } from '../../core/mime.js';
 import { conflict } from '../../core/errors.js';
-import { getThumb, resetThumbFailures, THUMB_SIZES } from './thumb.js';
+import { getThumb, isBlackCachedThumb, resetThumbFailures, THUMB_SIZES } from './thumb.js';
 
-/** 扫描网盘时的最大下钻深度，避免超深目录拖垮维护任务（与启动预扫一致） */
+/** 扫描网盘时的最大下钻深度，避免超深目录拖垮任务 */
 const MAX_SCAN_DEPTH = 6;
-/** 重建覆盖的尺寸：WebUI 实际只会请求列表 160 与网格 384 两档 */
-const REBUILD_SIZES = [384, 160];
+/** 建立的尺寸：WebUI 只会请求列表 160 与网格 384 两档 */
+const GENERATE_SIZES = [384, 160];
 /** 源文件比缓存新多少才算「已被修改」（容差用于抵消文件系统时间戳精度） */
 const MODIFIED_TOLERANCE_MS = 2000;
 
@@ -41,15 +43,16 @@ export const toNode = (file: MediaFile): NodeInfo => ({
 
 /**
  * 遍历工作目录收集可生成缩略图的媒体文件（图片 + 视频）。
+ * 用异步 readdir：大目录遍历时让出事件循环，不会在启动时卡住服务。
  * 与文件列表一样跳过 .filehub 系统目录，因此缓存目录自身不会被当成内容。
  */
-export function walkMedia(storage: LocalStorage): MediaFile[] {
+export async function walkMedia(storage: LocalStorage): Promise<MediaFile[]> {
   const out: MediaFile[] = [];
-  const walk = (rel: string, depth: number): void => {
+  const walk = async (rel: string, depth: number): Promise<void> => {
     if (depth > MAX_SCAN_DEPTH) return;
     let entries: Dirent[];
     try {
-      entries = readdirSync(storage.absPath(rel), { withFileTypes: true });
+      entries = await readdir(storage.absPath(rel), { withFileTypes: true });
     } catch {
       return; // 目录不可读：跳过
     }
@@ -57,7 +60,7 @@ export function walkMedia(storage: LocalStorage): MediaFile[] {
       if (entry.name.startsWith('.filehub')) continue;
       const childRel = rel ? `${rel}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
-        walk(childRel, depth + 1);
+        await walk(childRel, depth + 1);
         continue;
       }
       const kind: MediaFile['kind'] | null = isVideoName(entry.name)
@@ -68,8 +71,22 @@ export function walkMedia(storage: LocalStorage): MediaFile[] {
       if (kind) out.push({ id: idOf(childRel), name: entry.name, key: childRel, kind });
     }
   };
-  walk('', 0);
+  await walk('', 0);
   return out;
+}
+
+// ---------- 串行执行器 ----------
+
+/**
+ * 所有生成/清理都排在一条链上串行执行：避免并发抽帧打满 CPU，
+ * 也让缓存清理不会和正在写入的缩略图打架。
+ */
+let chain: Promise<unknown> = Promise.resolve();
+
+function runExclusive<T>(task: () => Promise<T>): Promise<T> {
+  const result = chain.then(task, task);
+  chain = result.catch(() => undefined);
+  return result;
 }
 
 // ---------- 统计 ----------
@@ -110,8 +127,12 @@ type CleanReason = keyof CleanResult['reasons'];
  * - wrongKind：缓存对应的源文件类型已不是图片/视频
  * - invalid：文件名不符合 <cacheId>.<size>.jpg（尺寸不在白名单、写入中断的残留等）
  */
-export async function cleanStaleThumbs(storage: LocalStorage): Promise<CleanResult> {
-  if (job?.running) throw conflict('缩略图刷新任务正在进行，请等待完成或先停止');
+export function cleanStaleThumbs(storage: LocalStorage): Promise<CleanResult> {
+  return runExclusive(() => cleanStaleThumbsInner(storage));
+}
+
+async function cleanStaleThumbsInner(storage: LocalStorage): Promise<CleanResult> {
+  if (job?.running) throw conflict('缩略图任务正在进行，请等待完成或先停止');
 
   const files = await storage.listThumbFiles();
   const reasons: CleanResult['reasons'] = { missingSource: 0, sourceModified: 0, wrongKind: 0, invalid: 0 };
@@ -185,11 +206,14 @@ function decodeThumbId(id: string): string | null {
   }
 }
 
-// ---------- 全库补齐 / 重建（后台任务） ----------
+// ---------- 后台任务（启动补齐 / 手动刷新） ----------
+
+export type ThumbTrigger = 'startup' | 'manual';
 
 export interface ThumbJobSnapshot {
   running: boolean;
   mode: 'missing' | 'force';
+  trigger: ThumbTrigger;
   total: number;
   done: number;
   made: number;
@@ -205,18 +229,25 @@ export interface ThumbJobSnapshot {
 
 let job: ThumbJobSnapshot | null = null;
 let cancelRequested = false;
+/** 本进程内已确认「只能抽到黑帧」的项：避免每次任务都为其重跑一遍 ffmpeg */
+const blackKeep = new Set<string>();
 
 export function getThumbJob(): ThumbJobSnapshot | null {
   return job ? { ...job } : null;
 }
 
+export function isThumbTaskRunning(): boolean {
+  return job?.running === true;
+}
+
 /** 启动后台任务；已有任务在跑时抛错（由路由转成 409） */
-export function startThumbRebuild(storage: LocalStorage, mode: 'missing' | 'force'): ThumbJobSnapshot {
+export function startThumbTask(storage: LocalStorage, mode: 'missing' | 'force', trigger: ThumbTrigger): ThumbJobSnapshot {
   if (job?.running) throw conflict('已有缩略图任务在进行，请等待完成或先停止');
   cancelRequested = false;
   job = {
     running: true,
     mode,
+    trigger,
     total: 0,
     done: 0,
     made: 0,
@@ -228,11 +259,11 @@ export function startThumbRebuild(storage: LocalStorage, mode: 'missing' | 'forc
     cancelRequested: false,
     error: null,
   };
-  void runRebuild(storage, job);
+  void runThumbTask(storage, job);
   return { ...job };
 }
 
-export function cancelThumbRebuild(): ThumbJobSnapshot | null {
+export function cancelThumbTask(): ThumbJobSnapshot | null {
   if (job?.running) {
     cancelRequested = true;
     job.cancelRequested = true;
@@ -240,29 +271,27 @@ export function cancelThumbRebuild(): ThumbJobSnapshot | null {
   return job ? { ...job } : null;
 }
 
-async function runRebuild(storage: LocalStorage, j: ThumbJobSnapshot): Promise<void> {
+/** 上传落地后排队生成（不单独开任务，直接插进串行链，可与全库任务交错执行） */
+export function enqueueUploaded(storage: LocalStorage, node: NodeInfo): void {
+  void runExclusive(async () => {
+    for (const size of GENERATE_SIZES) await getThumb(storage, node, size);
+  }).catch(() => {});
+}
+
+async function runThumbTask(storage: LocalStorage, j: ThumbJobSnapshot): Promise<void> {
   try {
     // 清掉失败记忆：让它重试此前抽帧失败/黑屏的视频
     resetThumbFailures();
-    const files = walkMedia(storage);
-    j.total = files.length * REBUILD_SIZES.length;
+    const files = await walkMedia(storage);
+    j.total = files.length * GENERATE_SIZES.length;
 
     for (const file of files) {
       if (cancelRequested) break;
-      const node = toNode(file);
-      for (const size of REBUILD_SIZES) {
+      for (const size of GENERATE_SIZES) {
         if (cancelRequested) break;
         j.current = `${file.name} · ${size}px`;
-        const cacheId = cacheIdOf(file.id, file.kind);
-        if (j.mode === 'missing' && (await storage.hasThumb(cacheId, size))) {
-          j.skipped++;
-        } else {
-          // 重建必须先删旧缓存：否则 getThumb 会直接命中旧的（例如黑屏封面）而不再生成
-          if (j.mode === 'force') await storage.removeThumbFiles([`${cacheId}.${size}.jpg`]);
-          const result = await getThumb(storage, node, size);
-          if (result) j.made++;
-          else j.failed++;
-        }
+        // 逐项排进串行链：既避免并发抽帧，也让上传产生的新任务能插队先跑
+        await runExclusive(() => processItem(storage, j, file, size));
         j.done++;
       }
     }
@@ -274,4 +303,41 @@ async function runRebuild(storage: LocalStorage, j: ThumbJobSnapshot): Promise<v
     j.current = '';
     cancelRequested = false;
   }
+}
+
+async function processItem(storage: LocalStorage, j: ThumbJobSnapshot, file: MediaFile, size: number): Promise<void> {
+  const cacheId = cacheIdOf(file.id, file.kind);
+  const key = `${cacheId}.${size}`;
+  const cacheFile = `${key}.jpg`;
+
+  if (j.mode === 'missing') {
+    if (await storage.hasThumb(cacheId, size)) {
+      // 视频封面额外体检：旧的纯黑封面（历史版本/早期抽帧留下的）当作缺失重新生成，
+      // 这样重启后的「补齐」会顺手把它们修好，而不是一直显示黑块。
+      const heal = file.kind === 'video' && !blackKeep.has(key) && (await readAndCheckBlack(storage, cacheId, size));
+      if (!heal) {
+        j.skipped++;
+        return;
+      }
+    }
+  }
+
+  // 走生成前必须先删旧缓存：否则 getThumb 会直接命中旧的（纯黑封面 / 要重建的旧图）而不再生成
+  await storage.removeThumbFiles([cacheFile]);
+
+  j.current = `${file.name} · ${size}px`;
+  const result = await getThumb(storage, toNode(file), size);
+  if (!result) {
+    j.failed++;
+    return;
+  }
+  j.made++;
+  if (file.kind === 'video' && (await isBlackCachedThumb(result.buffer))) blackKeep.add(key);
+}
+
+/** 读取已缓存封面并判断是否全黑（读不到/解不开时按「需要重生成」处理，以便自愈） */
+async function readAndCheckBlack(storage: LocalStorage, cacheId: string, size: number): Promise<boolean> {
+  const cached = await storage.readThumb(cacheId, size);
+  if (!cached) return true;
+  return isBlackCachedThumb(cached);
 }

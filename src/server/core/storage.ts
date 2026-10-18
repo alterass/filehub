@@ -1,5 +1,5 @@
 import { createReadStream, createWriteStream, statSync } from 'node:fs';
-import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
@@ -96,16 +96,31 @@ export class LocalStorage {
   async writeThumb(cacheId: string, size: number, data: Buffer): Promise<void> {
     const target = this.thumbPath(cacheId, size);
     await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, data);
+    // 先写临时文件再原子替换：进程被中断时不会留下半截 JPEG
+    // （半截图会被当成有效缓存一直返回，表现为缩略图变黑/损坏且重启也不会自愈）
+    const tmp = `${target}.${randomUUID().slice(0, 8)}.part`;
+    await writeFile(tmp, data);
+    try {
+      await rename(tmp, target);
+    } catch (err) {
+      await rm(tmp, { force: true }).catch(() => {});
+      throw err;
+    }
+  }
+
+  /** 缓存的元信息（大小 + mtime），用于给 /thumb 生成 ETag 和判断是否存在 */
+  async thumbMeta(cacheId: string, size: number): Promise<{ size: number; mtimeMs: number } | null> {
+    try {
+      const s = await stat(this.thumbPath(cacheId, size));
+      return s.isFile() ? { size: s.size, mtimeMs: s.mtimeMs } : null;
+    } catch {
+      return null;
+    }
   }
 
   /** 缩略图是否已缓存（只看存在性，不读内容 —— 避免为了判断白读一个大文件） */
   async hasThumb(cacheId: string, size: number): Promise<boolean> {
-    try {
-      return (await stat(this.thumbPath(cacheId, size))).isFile();
-    } catch {
-      return false;
-    }
+    return (await this.thumbMeta(cacheId, size)) !== null;
   }
 
   /** 缓存目录路径（维护接口用于展示/日志） */

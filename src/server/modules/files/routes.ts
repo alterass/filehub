@@ -3,15 +3,15 @@ import type { FileHubModule } from '../../core/registry.js';
 import { badRequest, forbidden, notFound } from '../../core/errors.js';
 import { isImageName, isVideoName, unsafeToInline } from '../../core/mime.js';
 import { FilesService, type NodeInfo } from './service.js';
-import { DEFAULT_THUMB_SIZE, getThumb, THUMB_SIZES } from './thumb.js';
+import { DEFAULT_THUMB_SIZE, sniffThumbMime, thumbCacheId, THUMB_SIZES } from './thumb.js';
 import {
-  cancelThumbRebuild,
+  cancelThumbTask,
   cleanStaleThumbs,
+  enqueueUploaded,
   getThumbJob,
-  startThumbRebuild,
+  isThumbTaskRunning,
+  startThumbTask,
   thumbCacheStats,
-  toNode,
-  walkMedia,
 } from './thumb-cache.js';
 
 function parseRangeHeader(range: string | undefined, size: number): { start: number; end: number } | 'invalid' | null {
@@ -54,31 +54,22 @@ export const filesModule: FileHubModule = {
       if (c.get('user')?.role !== 'admin') throw forbidden('仅管理员可执行缩略图维护操作');
     };
 
-    // 启动预扫：为已有图片补齐默认尺寸缩略图（异步执行，不阻塞启动）。
-    // 触发时机仅此一次 + 上传事件 + 首次浏览的按需生成；日常刷新页面只会命中缓存。
-    // 视频不预扫：抽帧成本高，改为首次浏览 /thumb 时按需生成并缓存。
-    void (async () => {
-      try {
-        const images = walkMedia(ctx.storage).filter((f) => f.kind === 'image');
-        let made = 0;
-        for (const file of images) {
-          if (await ctx.storage.hasThumb(file.id, DEFAULT_THUMB_SIZE)) continue;
-          if (await getThumb(ctx.storage, toNode(file), DEFAULT_THUMB_SIZE)) made++;
-        }
-        if (images.length) {
-          console.log(`[thumbs] 启动检查：${images.length} 张图片，补齐 ${made} 张缩略图 → ${ctx.config.thumbDir}`);
-        }
-      } catch (err) {
-        console.error('[thumbs] 启动检查失败', err);
-      }
-    })();
+    // 启动补齐：交给统一的后台任务（missing = 只生成还没有的，不覆盖已有缓存）。
+    // 覆盖图片与视频；视频封面走全黑判断，历史遗留的纯黑封面会被顺手重生成。
+    // 不阻塞启动，进度在「个人设置 → 缩略图维护」可见。
+    try {
+      startThumbTask(ctx.storage, 'missing', 'startup');
+      console.log(`[thumbs] 启动补齐任务已排队 → ${ctx.config.thumbDir}`);
+    } catch (err) {
+      console.error('[thumbs] 启动补齐任务启动失败', err);
+    }
 
-    // 新文件落地后异步补齐缩略图索引：图片直接解码，视频用 ffmpeg 抽帧
+    // 新文件落地后排队生成缩略图（走统一串行任务链，不在请求里生成）
     ctx.bus.on('files:uploaded', ({ row }) => {
       const node = row as NodeInfo | undefined;
       if (!node?.name || node.type !== 'file') return;
       if (!isImageName(node.name) && !isVideoName(node.name)) return;
-      void getThumb(ctx.storage, node, DEFAULT_THUMB_SIZE).catch(() => {});
+      enqueueUploaded(ctx.storage, node);
     });
 
     // ---- 缩略图维护（仅管理员）：统计 / 补齐·重建（后台任务）/ 停止 / 清理过时缓存 ----
@@ -93,12 +84,12 @@ export const filesModule: FileHubModule = {
       requireAdmin(c);
       const body = await c.req.json().catch(() => null);
       const mode = body?.mode === 'force' ? 'force' : 'missing';
-      return c.json(startThumbRebuild(ctx.storage, mode), 202);
+      return c.json(startThumbTask(ctx.storage, mode, 'manual'), 202);
     });
 
     app.post('/api/files/thumbs/rebuild/cancel', (c) => {
       requireAdmin(c);
-      return c.json({ job: cancelThumbRebuild() });
+      return c.json({ job: cancelThumbTask() });
     });
 
     app.post('/api/files/thumbs/clean', async (c) => {
@@ -115,6 +106,8 @@ export const filesModule: FileHubModule = {
         path: result.path,
         stats: result.stats,
         items: result.items,
+        // 后台正在生成缩略图：前端据此在任务期间自动重载列表，让缩略图逐步出现
+        thumbsRunning: isThumbTaskRunning(),
       });
     });
 
@@ -228,24 +221,32 @@ export const filesModule: FileHubModule = {
       });
     });
 
-    // ---- 缩略图（生成 + 缓存）：图片用 Skia 缩放，视频用 ffmpeg 抽帧 ----
+    // ---- 缩略图（只读缓存 + ETag 复验；生成一律由后台任务负责，不在请求里跑）----
     app.get('/api/files/:id/thumb', async (c) => {
       const node = await svc.getNode(c.req.param('id'));
       if (node.type !== 'file') throw notFound('文件夹没有缩略图');
       const requested = Number(c.req.query('s'));
       const size = THUMB_SIZES.includes(requested) ? requested : DEFAULT_THUMB_SIZE;
-      const thumb = await getThumb(ctx.storage, node, size);
-      if (!thumb) {
-        // 视频不能像图片那样 302 回退原文件：浏览器不会在 <img> 里渲染视频，
-        // 直接 404，让前端 onerror 回落到图标（也避免白拉一个几十 MB 的视频）。
-        if (isVideoName(node.name)) return new Response(null, { status: 404 });
-        return c.redirect(`/api/files/${node.id}/raw`, 302);
-      }
-      return new Response(thumb.buffer, {
+
+      const cacheId = thumbCacheId(node);
+      const meta = await ctx.storage.thumbMeta(cacheId, size);
+      // 还没生成：直接 404，前端回落图标（后台任务跑完后由列表自动刷新接管）
+      if (!meta) return new Response(null, { status: 404 });
+
+      // ETag 取缓存文件的大小+mtime：缓存被重建/清理后 ETag 变化，浏览器立刻换图。
+      // 配合 no-cache（每次带 ETag 复验而不是直接用本地副本），
+      // 避免「重建过封面后重启，浏览器仍吐一周前缓存的旧黑图」。
+      const etag = `"${meta.size.toString(16)}-${Math.round(meta.mtimeMs).toString(16)}"`;
+      if (c.req.header('if-none-match') === etag) return new Response(null, { status: 304 });
+
+      const buffer = await ctx.storage.readThumb(cacheId, size);
+      if (!buffer) return new Response(null, { status: 404 });
+      return new Response(buffer, {
         status: 200,
         headers: {
-          'content-type': thumb.mime,
-          'cache-control': 'private, max-age=604800',
+          'content-type': sniffThumbMime(buffer, node.name),
+          'cache-control': 'private, no-cache',
+          etag,
         },
       });
     });

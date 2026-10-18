@@ -40,6 +40,20 @@ export interface ThumbResult {
   mime: string;
 }
 
+/** 缩略图 / 视频封面的缓存 id（视频加 v_ 前缀与图片区分） */
+export function thumbCacheId(node: NodeInfo): string {
+  return isVideoExt(extOf(node.name)) ? VIDEO_CACHE_PREFIX + node.id : node.id;
+}
+
+/**
+ * 缓存内容的真实类型：小图走「原始字节直通」时，缓存文件里放的是原图数据
+ * （可能是 PNG/GIF/WebP…），按 JPEG magic 判断，避免把 PNG 当 JPEG 回给浏览器。
+ */
+export function sniffThumbMime(buffer: Buffer, name: string): string {
+  const isJpeg = buffer.length > 3 && buffer[0] === 0xff && buffer[1] === 0xd8;
+  return isJpeg ? 'image/jpeg' : mimeByName(name);
+}
+
 /** 同一 (节点,尺寸) 的并发请求合并为一个任务 */
 const inflight = new Map<string, Promise<ThumbResult | null>>();
 
@@ -68,11 +82,12 @@ function markFailed(cacheKey: string): void {
 }
 
 /**
- * 取缩略图：缓存命中直接返回；未命中则生成 JPEG 并落盘缓存。
+ * 生成缩略图并落盘缓存（缓存命中直接返回）。
+ * 只由后台缩略图任务调用（启动补齐 / 上传 / 手动重建），HTTP 请求路径不再触发生成，
+ * 避免一次目录浏览并发拉出几十个 ffmpeg / 解码任务。
  * - 图片：@napi-rs/canvas 解码缩放（支持 png/jpeg/gif/webp/bmp/ico/avif/svg）
- * - 视频：ffmpeg 抽一帧交给 canvas 缩放编码（服务端自带 ffmpeg，无需浏览器参与）
- * 不支持或解码失败返回 null（调用方回退原图）。
- * 小于目标尺寸的图片直接返回原字节，避免放大与二次编码（SVG 除外，必须栅格化）。
+ * - 视频：ffmpeg 抽一帧交给 canvas 缩放编码（抽到全黑帧会自动往后换点位）
+ * 不支持或解码失败返回 null（调用方回退图标）。
  */
 export async function getThumb(storage: LocalStorage, node: NodeInfo, size: number): Promise<ThumbResult | null> {
   if (!node.key) return null;
@@ -80,7 +95,7 @@ export async function getThumb(storage: LocalStorage, node: NodeInfo, size: numb
   const isVideo = isVideoExt(ext);
   if (!isVideo && !IMAGE_SOURCE_EXTS.includes(ext)) return null;
 
-  const cacheId = isVideo ? VIDEO_CACHE_PREFIX + node.id : node.id;
+  const cacheId = thumbCacheId(node);
   const cached = await storage.readThumb(cacheId, size);
   if (cached) return { buffer: cached, mime: 'image/jpeg' };
 
@@ -114,9 +129,11 @@ async function imageThumb(storage: LocalStorage, node: NodeInfo, ext: string, si
   const img = await loadImage(raw);
   if (!img.width || !img.height) return null;
 
-  // 原图不超过目标尺寸：直接返回原字节（不放大、不重编码）。
+  // 原图不超过目标尺寸：直接落盘原始字节（不放大、不重编码，动图也能保留）。
+  // 必须写缓存：请求路径不再生成，缓存文件是 /thumb 唯一的来源。
   // SVG 例外：必须栅格化成位图，原样返回等于在 /thumb 里内联可执行脚本的 SVG。
   if (ext !== 'svg' && img.width <= size && img.height <= size) {
+    await storage.writeThumb(node.id, size, raw);
     return { buffer: raw, mime: mimeByName(node.name) };
   }
   return persist(storage, node.id, size, img);
@@ -203,6 +220,21 @@ function isMostlyBlack(img: Image): boolean {
     sum += (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
   }
   return sum / (data.length / 4) < BLACK_MEAN_LUMA;
+}
+
+/**
+ * 已缓存的视频封面是不是全黑。用于把历史遗留的纯黑封面当作「缺失」重新生成，
+ * 从而让启动补齐 / 手动补齐顺手修好它们，而不是一直显示黑块。
+ * 读不到或解不开时返回 true（当作需要重生成，给它自愈的机会）。
+ */
+export async function isBlackCachedThumb(buffer: Buffer): Promise<boolean> {
+  try {
+    const img = await loadImage(buffer);
+    if (!img.width || !img.height) return true;
+    return isMostlyBlack(img);
+  } catch {
+    return true;
+  }
 }
 
 /**

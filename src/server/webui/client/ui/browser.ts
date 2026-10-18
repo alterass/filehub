@@ -221,10 +221,31 @@ function exitSearch() {
 
 // ---------- 数据加载 ----------
 
+/** 后台正在生成缩略图时的自动重载定时器（同一时刻只保留一个） */
+let thumbsReloadTimer = null;
+/** 后台自动重载不显示 loading 骨架，避免任务期间每几秒闪一次 */
+let silentReload = false;
+
+/**
+ * 生成改由服务端后台任务负责后，缩略图不会随请求立刻出现。
+ * 列表接口会带回 thumbsRunning；据此在任务期间定期重载，让缩略图逐步显示出来。
+ * 有弹层打开（设置/菜单/预览等）时先跳过，避免打断用户操作。
+ */
+function scheduleThumbsReload() {
+  if (thumbsReloadTimer) clearTimeout(thumbsReloadTimer);
+  thumbsReloadTimer = setTimeout(() => {
+    thumbsReloadTimer = null;
+    if (document.querySelector('.overlay')) return scheduleThumbsReload();
+    silentReload = true;
+    reload();
+  }, 4000);
+}
+
 async function load() {
   if (!built || !root.isConnected) return;
   const listEl = $('#fileList');
-  listEl.innerHTML = '<div class="loading-spin"></div>';
+  if (silentReload) silentReload = false;
+  else listEl.innerHTML = '<div class="loading-spin"></div>';
   $('#emptyState').hidden = true;
   try {
     if (state.searching) {
@@ -240,6 +261,7 @@ async function load() {
       renderStats();
       const input = $('#searchInput');
       if (input.value) { input.value = ''; $('#searchClear').hidden = true; }
+      if (data.thumbsRunning) scheduleThumbsReload();
     }
     renderItems();
   } catch (err) {
