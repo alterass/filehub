@@ -53,8 +53,15 @@ export function upload(file, parentId, { onProgress } = {}) {
 
 export const rawUrl = (id) => `/api/files/${id}/raw`;
 export const downloadUrl = (id) => `/api/files/${id}/download`;
-/** 缩略图：s 为最长边像素（服务端白名单 160/384/768），不支持的格式自动回退原图 */
-export const thumbUrl = (id, s = 384) => `/api/files/${id}/thumb?s=${s}`;
+/**
+ * 缩略图缓存版本：改动缩略图的响应头或内容格式时递增。
+ * URL 一变，浏览器里旧的缓存副本就再也不会被取用 —— 这是唯一能摆脱
+ * 「浏览器本地还存着一份『新鲜』的旧图」的办法：改响应头没用，因为那份旧副本
+ * 还在 max-age 有效期内时，浏览器压根不会来问服务器。
+ */
+const THUMB_CACHE_VERSION = 2;
+/** 缩略图：s 为最长边像素（服务端白名单 160/384/768，其余尺寸回落 384） */
+export const thumbUrl = (id, s = 384) => `/api/files/${id}/thumb?s=${s}&v=${THUMB_CACHE_VERSION}`;
 
 export const api = {
   // 认证

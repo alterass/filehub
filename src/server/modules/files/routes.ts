@@ -230,17 +230,21 @@ export const filesModule: FileHubModule = {
 
       const cacheId = thumbCacheId(node);
       const meta = await ctx.storage.thumbMeta(cacheId, size);
-      // 还没生成：直接 404，前端回落图标（后台任务跑完后由列表自动刷新接管）
-      if (!meta) return new Response(null, { status: 404 });
+      // 还没生成：直接 404，前端回落图标（后台任务跑完后由列表自动刷新接管）。
+      // no-store 必须带上：否则这个 404 可能被浏览器缓存，缩略图生成好了也一直显示图标。
+      if (!meta) return new Response(null, { status: 404, headers: { 'cache-control': 'no-store' } });
 
       // ETag 取缓存文件的大小+mtime：缓存被重建/清理后 ETag 变化，浏览器立刻换图。
       // 配合 no-cache（每次带 ETag 复验而不是直接用本地副本），
       // 避免「重建过封面后重启，浏览器仍吐一周前缓存的旧黑图」。
       const etag = `"${meta.size.toString(16)}-${Math.round(meta.mtimeMs).toString(16)}"`;
-      if (c.req.header('if-none-match') === etag) return new Response(null, { status: 304 });
+      if (c.req.header('if-none-match') === etag) {
+        // 304 也应带上 ETag / Cache-Control，让浏览器续用同一份校验信息
+        return new Response(null, { status: 304, headers: { 'cache-control': 'private, no-cache', etag } });
+      }
 
       const buffer = await ctx.storage.readThumb(cacheId, size);
-      if (!buffer) return new Response(null, { status: 404 });
+      if (!buffer) return new Response(null, { status: 404, headers: { 'cache-control': 'no-store' } });
       return new Response(buffer, {
         status: 200,
         headers: {
