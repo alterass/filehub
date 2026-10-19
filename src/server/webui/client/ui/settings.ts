@@ -14,52 +14,64 @@ export async function openSettingsPanel() {
   ov.className = 'overlay settings-overlay';
   ov.innerHTML = `
     <div class="dialog-backdrop"></div>
-    <div class="dialog settings-panel">
-      <h3>${icon('settings')} 个人设置</h3>
-
-      <div class="settings-section">
-        <div class="settings-label">长按加速倍数</div>
-        <div class="rate-control">
-          <input id="rateRange" type="range" min="1" max="${MAX_LONG_PRESS_RATE}" step="0.5" value="${state.longPressRate}" />
-          <span class="rate-value" id="rateValue">${formatRate(state.longPressRate)}x</span>
-        </div>
-        <div class="rate-chips" id="rateChips">
-          ${[1, 1.5, 2, 2.5, 3, 4, 5]
-            .map((r) => `<button class="rate-chip ${r === state.longPressRate ? 'active' : ''}" data-rate="${r}">${formatRate(r)}x</button>`)
-            .join('')}
-        </div>
-        <p class="settings-hint">长按视频画面时加速播放。默认 ${formatRate(DEFAULT_LONG_PRESS_RATE)}x，最大 ${formatRate(MAX_LONG_PRESS_RATE)}x。</p>
+    <div class="dialog settings-panel" role="dialog" aria-label="个人设置">
+      <div class="dialog-head">
+        <h3>个人设置</h3>
+        <button class="icon-btn settings-close" title="关闭">${icon('close')}</button>
       </div>
 
-      <div class="settings-section">
-        <div class="settings-label">${icon('folder')} 工作目录</div>
-        <div class="settings-workdir" id="settingsWorkDir" title="服务端工作目录（只读）">读取中…</div>
-      </div>
-
-      ${isAdmin ? `
-      <div class="settings-section">
-        <div class="settings-label">${icon('image')} 缩略图维护</div>
-        <div class="thumb-stats" id="thumbStats">读取中…</div>
-        <div class="thumb-actions">
-          <button class="btn btn-ghost btn-sm" id="thumbMissing">补齐缺失</button>
-          <button class="btn btn-ghost btn-sm" id="thumbForce">全部重建</button>
-          <button class="btn btn-ghost btn-sm" id="thumbClean">清理过时</button>
-        </div>
-        <div class="thumb-progress" id="thumbProgress" hidden>
-          <div class="thumb-bar"><i id="thumbBar"></i></div>
-          <div class="thumb-progress-row">
-            <span id="thumbProgressText"></span>
-            <button class="btn btn-ghost btn-sm" id="thumbCancel">停止</button>
+      <div class="settings-body">
+        <section class="settings-section">
+          <div class="settings-copy">
+            <h4>视频长按加速</h4>
+            <p>长按视频画面时加速播放。默认 ${formatRate(DEFAULT_LONG_PRESS_RATE)}x，最大 ${formatRate(MAX_LONG_PRESS_RATE)}x。</p>
           </div>
-        </div>
-        <p class="settings-hint">
-          「补齐缺失」只生成还没有的缩略图；「全部重建」会重新解码/抽帧并覆盖已有缓存，
-          可用于修复黑屏视频封面。任务在服务端后台执行，可以关掉此面板。
-        </p>
-      </div>` : ''}
+          <div class="settings-panel-body">
+            <div class="rate-control">
+              <input id="rateRange" type="range" min="1" max="${MAX_LONG_PRESS_RATE}" step="0.5" value="${state.longPressRate}" aria-label="长按加速倍数" />
+              <span class="rate-value" id="rateValue">${formatRate(state.longPressRate)}x</span>
+            </div>
+            <div class="rate-chips" id="rateChips">
+              ${[1, 1.5, 2, 2.5, 3, 4, 5]
+                .map((r) => `<button class="rate-chip ${r === state.longPressRate ? 'active' : ''}" data-rate="${r}">${formatRate(r)}x</button>`)
+                .join('')}
+            </div>
+          </div>
+        </section>
 
-      <div class="dialog-actions">
-        <button class="btn btn-ghost settings-close">关闭</button>
+        <section class="settings-section">
+          <div class="settings-copy">
+            <h4>工作目录</h4>
+            <p>网盘根目录。配置、数据库与缩略图缓存都保存在其中的 .filehub 文件夹。</p>
+          </div>
+          <div class="settings-panel-body">
+            <div class="settings-workdir" id="settingsWorkDir" title="服务端工作目录（只读）">读取中…</div>
+          </div>
+        </section>
+
+        ${isAdmin ? `
+        <section class="settings-section">
+          <div class="settings-copy">
+            <h4>缩略图维护</h4>
+            <p>图片与视频封面由服务端后台生成。补齐缺失只处理还没有缓存的条目；全部重建会重新解码或抽帧并覆盖已有文件。</p>
+          </div>
+          <div class="settings-panel-body">
+            <div class="thumb-stats" id="thumbStats">读取中…</div>
+            <div class="thumb-actions">
+              <button class="btn btn-ghost btn-sm" id="thumbMissing">补齐缺失</button>
+              <button class="btn btn-ghost btn-sm" id="thumbForce">全部重建</button>
+              <button class="btn btn-ghost btn-sm" id="thumbClean">清理过时</button>
+            </div>
+            <div class="thumb-progress" id="thumbProgress" hidden>
+              <div class="thumb-bar"><i id="thumbBar"></i></div>
+              <div class="thumb-progress-row">
+                <span id="thumbProgressText"></span>
+                <button class="btn btn-ghost btn-sm" id="thumbCancel">停止</button>
+              </div>
+            </div>
+            <p class="settings-hint">任务在服务端后台执行，可以关掉此面板；完成后列表会自动刷新。</p>
+          </div>
+        </section>` : ''}
       </div>
     </div>`;
   document.getElementById('layers').appendChild(ov);

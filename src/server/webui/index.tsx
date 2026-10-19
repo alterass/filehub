@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { jsxRenderer } from 'hono/jsx-renderer';
 import { Page } from './page.js';
 import { APP_CSS } from './styles.js';
+import { FONT_CSS } from './fonts.js';
 import { CLIENT_BUNDLE } from './client-bundle.gen.js';
 import type { CoreContext, FileHubModule } from '../core/registry.js';
 
@@ -36,7 +37,7 @@ export const webUiModule: FileHubModule = {
 
     ctx.app.use(
       jsxRenderer(({ children }) => (
-        <Page css={APP_CSS} vendorCss={vendor.css} vendorJs={vendor.js} clientJs={CLIENT_BUNDLE}>
+        <Page css={APP_CSS} fontCss={FONT_CSS} vendorCss={vendor.css} vendorJs={vendor.js} clientJs={CLIENT_BUNDLE}>
           {children}
         </Page>
       )),

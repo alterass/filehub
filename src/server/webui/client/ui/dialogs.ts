@@ -1,6 +1,6 @@
 // @ts-nocheck
 // 通用对话框：prompt / confirm / 移动到文件夹 / 操作菜单（电脑端浮层，手机端底部面板）
-import { $, icon } from '../util.js';
+import { $, icon, escapeHtml } from '../util.js';
 
 const layers = () => document.getElementById('layers');
 
@@ -35,9 +35,11 @@ export function prompt({ title, label = '', value = '', placeholder = '', okText
   return new Promise((resolve) => {
     const ov = overlay(`
       <div class="dialog" role="dialog">
-        <h3>${title}</h3>
-        ${label ? `<p class="dialog-label">${label}</p>` : ''}
-        <input class="input" type="text" value="${value.replace(/"/g, '&quot;')}" placeholder="${placeholder}" />
+        <div class="dialog-head"><h3>${title}</h3></div>
+        <div class="dialog-body">
+          ${label ? `<p class="dialog-label">${label}</p>` : ''}
+          <input class="input" type="text" value="${value.replace(/"/g, '&quot;')}" placeholder="${placeholder}" />
+        </div>
         <div class="dialog-actions">
           <button class="btn btn-ghost dialog-cancel">取消</button>
           <button class="btn btn-primary dialog-ok">${okText}</button>
@@ -57,8 +59,8 @@ export function confirm({ title, message, okText = '删除', danger = true }) {
   return new Promise((resolve) => {
     const ov = overlay(`
       <div class="dialog" role="dialog">
-        <h3>${title}</h3>
-        <p class="dialog-label">${message}</p>
+        <div class="dialog-head"><h3>${title}</h3></div>
+        <div class="dialog-body"><p class="dialog-label">${message}</p></div>
         <div class="dialog-actions">
           <button class="btn btn-ghost dialog-cancel">取消</button>
           <button class="btn ${danger ? 'btn-danger' : 'btn-primary'} dialog-ok">${okText}</button>
@@ -79,7 +81,7 @@ export async function moveDialog({ folders, excludeIds = [] }) {
           const disabled = excluded.has(f.id);
           return `
             <div class="mv-node ${disabled ? 'disabled' : ''}" data-id="${f.id}" style="--depth:${depth}">
-              ${icon('folder')}<span>${f.name}</span>
+              ${icon('folder')}<span>${escapeHtml(f.name)}</span>
             </div>
             ${renderTree(f.id, depth + 1)}`;
         })
@@ -87,12 +89,14 @@ export async function moveDialog({ folders, excludeIds = [] }) {
 
     const ov = overlay(`
       <div class="dialog dialog-tree" role="dialog">
-        <h3>移动到…</h3>
-        <div class="mv-tree">
-          <div class="mv-node ${excluded.has('__root__') ? 'disabled' : ''}" data-id="">
-            ${icon('archive')}<span>根目录</span>
+        <div class="dialog-head"><h3>移动到…</h3></div>
+        <div class="dialog-body">
+          <div class="mv-tree">
+            <div class="mv-node ${excluded.has('__root__') ? 'disabled' : ''}" data-id="">
+              ${icon('archive')}<span>根目录</span>
+            </div>
+            ${renderTree(null, 1)}
           </div>
-          ${renderTree(null, 1)}
         </div>
         <div class="dialog-actions">
           <button class="btn btn-ghost dialog-cancel">取消</button>

@@ -1,27 +1,25 @@
 // @ts-nocheck
-// 登录 / 首次初始化（创建管理员）视图 —— 玻璃拟态卡片 + 渐变背景 + 品牌标识
+// 登录 / 首次初始化（创建管理员）视图 —— 档案卡片：左说明、右表单
 import { api } from '../api.js';
-import { bus, icon } from '../util.js';
+import { bus, icon, BRAND_MARK } from '../util.js';
 
 function brandHtml() {
   return `
     <div class="auth-brand">
-      <span class="auth-logo">${icon('archive')}</span>
+      <span class="auth-logo">${BRAND_MARK}</span>
       <span>FileHub</span>
     </div>`;
 }
 
 function fieldHtml({ label, name, type = 'text', placeholder = '', autocomplete = 'off', withEye = false }) {
-  const iconName = type === 'password' ? 'settings' : 'user';
   const eyeBtn = withEye
-    ? `<button type="button" class="field-eye" data-eye title="显示/隐藏密码">${icon('open')}</button>`
+    ? `<button type="button" class="field-eye" data-eye title="显示密码">${icon('eye')}</button>`
     : '';
   return `
-    <label class="field">
+    <label class="field${withEye ? ' has-eye' : ''}">
       <span class="field-label">${label}</span>
       <input class="input" type="${type}" name="${name}" placeholder="${placeholder}"
              autocomplete="${autocomplete}" required />
-      <i class="field-icon" aria-hidden="true">${icon(iconName)}</i>
       ${eyeBtn}
     </label>`;
 }
@@ -29,17 +27,26 @@ function fieldHtml({ label, name, type = 'text', placeholder = '', autocomplete 
 function shell({ title, subtitle, fieldsHtml, submitText }) {
   return `
     <div class="auth-view">
-      <div class="auth-orb o1"></div>
-      <div class="auth-orb o2"></div>
-      <div class="auth-card">
-        ${brandHtml()}
-        <h1>${title}</h1>
-        ${subtitle ? `<p class="auth-sub">${subtitle}</p>` : ''}
-        <form class="auth-form" novalidate>
-          ${fieldsHtml}
-          <div class="form-error" hidden>${icon('alert')}<span></span></div>
-          <button class="btn btn-primary btn-block" type="submit">${submitText}</button>
-        </form>
+      <div class="auth-shell">
+        <section class="auth-intro">
+          ${brandHtml()}
+          <p class="auth-statement">文件都在<br />自己的设备上。</p>
+          <p class="auth-lead">局域网个人网盘。照片、视频与文档保存在你的设备里，不经过云端。</p>
+          <div class="auth-facts">
+            <span>局域网直连</span><span class="sep"></span>
+            <span>多用户隔离</span><span class="sep"></span>
+            <span>缩略图预览</span>
+          </div>
+        </section>
+        <section class="auth-card">
+          <h1>${title}</h1>
+          ${subtitle ? `<p class="auth-sub">${subtitle}</p>` : ''}
+          <form class="auth-form" novalidate>
+            ${fieldsHtml}
+            <div class="form-error" hidden>${icon('alert')}<span></span></div>
+            <button class="btn btn-primary btn-block" type="submit">${submitText}</button>
+          </form>
+        </section>
       </div>
     </div>`;
 }
@@ -57,7 +64,7 @@ function bindForm(root, onSubmit) {
       const input = eye.parentElement.querySelector('input');
       const show = input.type === 'password';
       input.type = show ? 'text' : 'password';
-      eye.innerHTML = icon(show ? 'close' : 'open');
+      eye.innerHTML = icon(show ? 'eyeOff' : 'eye');
       eye.title = show ? '隐藏密码' : '显示密码';
     });
   });
@@ -105,7 +112,7 @@ export function renderLogin(root) {
     fieldsHtml:
       fieldHtml({ label: '用户名', name: 'username', placeholder: '输入用户名', autocomplete: 'username' }) +
       fieldHtml({ label: '密码', name: 'password', type: 'password', placeholder: '输入密码', autocomplete: 'current-password', withEye: true }),
-    submitText: '登 录',
+    submitText: '登录',
   });
   bindForm(root, async (data) => {
     const { user } = await api.login({ username: data.username, password: data.password });

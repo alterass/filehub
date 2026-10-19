@@ -1,7 +1,7 @@
 // @ts-nocheck
 // 用户管理面板（仅管理员）：新增用户、重置密码、删除用户
 import { api } from '../api.js';
-import { icon, toast, formatSize } from '../util.js';
+import { icon, toast, escapeHtml } from '../util.js';
 import { prompt, confirm } from './dialogs.js';
 import { state } from '../store.js';
 
@@ -11,15 +11,16 @@ export async function openAdminPanel() {
   ov.className = 'overlay admin-overlay';
   ov.innerHTML = `
     <div class="dialog-backdrop"></div>
-    <div class="dialog admin-panel">
-      <h3>${icon('users')} 用户管理</h3>
-      <div class="admin-add">
-        <button class="btn btn-primary" id="addUser">${icon('folderPlus')} 添加用户</button>
+    <div class="dialog admin-panel" role="dialog" aria-label="用户管理">
+      <div class="dialog-head">
+        <h3>用户管理</h3>
+        <button class="icon-btn admin-close" title="关闭">${icon('close')}</button>
+      </div>
+      <div class="admin-toolbar">
+        <p>共 <span class="num" id="adminCount">0</span> 位成员</p>
+        <button class="btn btn-ghost btn-sm" id="addUser">${icon('plus')} 添加用户</button>
       </div>
       <div class="admin-list"><div class="loading-spin"></div></div>
-      <div class="dialog-actions">
-        <button class="btn btn-ghost admin-close">关闭</button>
-      </div>
     </div>`;
   document.getElementById('layers').appendChild(ov);
   requestAnimationFrame(() => ov.classList.add('show'));
@@ -31,18 +32,25 @@ export async function openAdminPanel() {
   const list = ov.querySelector('.admin-list');
   const load = async () => {
     const { items } = await api.adminListUsers();
-    list.innerHTML = items.map((u) => `
+    const count = ov.querySelector('#adminCount');
+    if (count) count.textContent = String(items.length);
+    list.innerHTML = items.map((u) => {
+      const name = escapeHtml(u.username);
+      const initial = escapeHtml((u.username.trim().slice(0, 1) || '?').toUpperCase());
+      return `
       <div class="admin-row" data-id="${u.id}">
         <div class="au-name">
-          ${icon('user')}<span>${u.username}</span>
+          <span class="avatar">${initial}</span>
+          <span>${name}</span>
           ${u.role === 'admin' ? '<em class="au-role">管理员</em>' : ''}
           ${u.id === state.user.id ? '<em class="au-me">当前账号</em>' : ''}
         </div>
         <div class="au-actions">
-          <button class="btn btn-ghost btn-sm au-reset" data-id="${u.id}" data-name="${u.username}">重置密码</button>
+          <button class="btn btn-ghost btn-sm au-reset" data-id="${u.id}" data-name="${name}">重置密码</button>
           <button class="btn btn-ghost btn-sm au-del danger" data-id="${u.id}" ${u.id === state.user.id ? 'disabled' : ''}>删除</button>
         </div>
-      </div>`).join('') || '<p class="dim">暂无用户</p>';
+      </div>`;
+    }).join('') || '<p class="dim">暂无用户</p>';
 
     list.querySelectorAll('.au-reset').forEach((btn) => {
       btn.addEventListener('click', async () => {

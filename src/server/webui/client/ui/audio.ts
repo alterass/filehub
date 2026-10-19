@@ -16,7 +16,7 @@ export function openAudioPlayer(item, playlist = []) {
     <div class="audio-card">
       <div class="audio-head">
         <button class="icon-btn audio-close" title="关闭">${icon('close')}</button>
-        <span class="audio-title"></span>
+        <span class="audio-title">音频播放</span>
         <a class="icon-btn" title="下载原文件" target="_blank">${icon('download')}</a>
       </div>
       <div class="audio-art">${icon('music')}</div>
@@ -39,7 +39,6 @@ export function openAudioPlayer(item, playlist = []) {
   audio.style.width = '100%';
   mount.appendChild(audio);
 
-  const titleEl = ov.querySelector('.audio-title');
   const nameEl = ov.querySelector('.audio-name');
   const metaEl = ov.querySelector('.audio-meta');
   const downloadEl = ov.querySelector('a');
@@ -47,9 +46,8 @@ export function openAudioPlayer(item, playlist = []) {
   const setCurrent = () => {
     const cur = playlist[current];
     audio.src = rawUrl(cur.id);
-    titleEl.textContent = cur.name;
     nameEl.textContent = cur.name;
-    metaEl.textContent = `${current + 1} / ${playlist.length}`;
+    metaEl.textContent = multiple ? `${current + 1} / ${playlist.length}` : '';
     downloadEl.href = downloadUrl(cur.id);
     ov.querySelector('.audio-prev')?.toggleAttribute('disabled', current <= 0);
     ov.querySelector('.audio-next')?.toggleAttribute('disabled', current >= playlist.length - 1);

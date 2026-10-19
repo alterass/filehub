@@ -3,7 +3,7 @@
 import { api, downloadUrl, thumbUrl } from '../api.js';
 import { state, navigate, setView, reload, toggleThumbs } from '../store.js';
 import {
-  bus, icon, kindOf, formatSize, formatDate, debounce, toast,
+  bus, icon, kindOf, formatSize, formatDate, extOf, debounce, toast, escapeHtml, BRAND_MARK,
   onLongPress, $, $$,
 } from '../util.js';
 import { prompt, confirm, actionMenu, moveDialog } from './dialogs.js';
@@ -25,45 +25,86 @@ let dropEl = null;     // 当前高亮的放置目标行
 function build(app) {
   app.innerHTML = `
     <header class="app-header">
-      <div class="brand">${icon('archive')}<b>FileHub</b></div>
-      <div class="search-box">
-        ${icon('search')}
-        <input id="searchInput" type="search" placeholder="搜索文件…" />
-        <button id="searchClear" class="icon-btn" hidden title="清除">${icon('close')}</button>
-      </div>
-      <div class="header-actions">
-        <button id="btnUpload" class="btn btn-primary">${icon('upload')}<span>上传</span></button>
-        <button id="btnNewFolder" class="icon-btn" title="新建文件夹">${icon('folderPlus')}</button>
-        <button id="btnView" class="icon-btn" title="切换列表/网格"></button>
-        <button id="btnThumbs" class="icon-btn" title=""></button>
-        <button id="btnUser" class="user-chip" title="账号">${icon('user')}<span></span></button>
-        <button id="btnMenu" class="icon-btn" title="菜单">${icon('menu')}</button>
+      <div class="header-inner">
+        <a class="brand" href="#/files" aria-label="FileHub 首页">
+          <span class="brand-mark">${BRAND_MARK}</span><span>FileHub</span>
+        </a>
+        <div class="search-box">
+          ${icon('search')}
+          <input id="searchInput" type="search" placeholder="搜索文件" aria-label="搜索文件" />
+          <button id="searchClear" class="icon-btn" hidden title="清除搜索">${icon('close')}</button>
+        </div>
+        <div class="header-actions">
+          <button id="btnUpload" class="btn btn-primary" title="上传文件">${icon('upload')}<span>上传</span></button>
+          <button id="btnNewFolder" class="icon-btn" title="新建文件夹">${icon('folderPlus')}</button>
+          <span class="header-divider" aria-hidden="true"></span>
+          <button id="btnUser" class="user-chip" title="账号">
+            <span class="avatar" id="userInitial">?</span>
+            <span class="user-name" id="userName"></span>
+          </button>
+          <button id="btnMenu" class="icon-btn" title="菜单">${icon('menu')}</button>
+        </div>
       </div>
     </header>
-    <div class="crumb-bar">
-      <div id="crumbs" class="crumbs"></div>
-      <span id="dirStats" class="dir-stats"></span>
-      <button id="btnRefresh" class="icon-btn" title="刷新">${icon('refresh')}</button>
-    </div>
     <main class="file-area">
-      <div id="fileList" class="file-list"></div>
-      <div id="emptyState" class="empty" hidden></div>
-      <div id="dropHint" class="drop-hint" hidden>松开以上传到当前目录</div>
+      <div class="page">
+        <div class="crumb-row"><nav id="crumbs" class="crumbs" aria-label="路径"></nav></div>
+        <div class="page-head">
+          <div class="page-head-main">
+            <h1 id="pageTitle" class="page-title">全部文件</h1>
+            <p id="pageMeta" class="page-meta"></p>
+          </div>
+          <div class="head-tools">
+            <button id="btnRefresh" class="icon-btn" title="刷新">${icon('refresh')}</button>
+            <div class="seg" role="group" aria-label="视图切换">
+              <button id="btnList" class="seg-btn" data-view="list" title="列表视图" aria-label="列表视图">${icon('list')}</button>
+              <button id="btnGrid" class="seg-btn" data-view="grid" title="网格视图" aria-label="网格视图">${icon('grid')}</button>
+            </div>
+            <button id="btnThumbs" class="icon-btn" title=""></button>
+          </div>
+        </div>
+        <div class="content-grid" id="contentGrid">
+          <div class="content-main">
+            <div class="shelf" id="shelf">
+              <div class="list-head" aria-hidden="true">
+                <span></span><span>名称</span><span>类型</span><span class="num">大小</span><span class="num head-date">修改时间</span><span></span>
+              </div>
+              <div id="fileList" class="file-list"></div>
+              <div class="list-foot" id="listFoot" hidden>
+                <span>把文件拖到这里即可上传</span>
+                <span class="num" id="listFootCount"></span>
+              </div>
+            </div>
+            <div id="emptyState" class="empty" hidden></div>
+          </div>
+          <aside class="rail" id="rail" aria-label="目录概览">
+            <section class="rail-section">
+              <h2 class="rail-title">媒体预览</h2>
+              <div id="railMedia"></div>
+            </section>
+            <section class="rail-section">
+              <h2 class="rail-title" id="railTypesTitle">目录构成</h2>
+              <div id="railTypes" class="rail-types"></div>
+            </section>
+          </aside>
+        </div>
+        <div id="dropHint" class="drop-hint" hidden>松开以上传到当前目录</div>
+      </div>
     </main>
-    <input type="file" id="fileInput" multiple hidden />
-    <button id="fab" class="fab" title="上传">${icon('upload')}</button>`;
+    <input type="file" id="fileInput" multiple hidden />`;
   root = app;
   built = true;
 
   // 头部事件
   $('#btnUpload').addEventListener('click', () => $('#fileInput').click());
-  $('#fab').addEventListener('click', () => $('#fileInput').click());
   $('#fileInput').addEventListener('change', (e) => {
     if (e.target.files.length) enqueue([...e.target.files], state.cwdId);
     e.target.value = '';
   });
   $('#btnNewFolder').addEventListener('click', doMkdir);
-  $('#btnView').addEventListener('click', () => setView(state.view === 'list' ? 'grid' : 'list'));
+  $$('#btnList, #btnGrid').forEach((btn) => {
+    btn.addEventListener('click', () => setView(btn.dataset.view));
+  });
   $('#btnThumbs').addEventListener('click', () => {
     toggleThumbs();
     toast(state.thumbs ? '图片以缩略图显示' : '图片以图标显示', 'info', 1500);
@@ -74,6 +115,19 @@ function build(app) {
   $('#searchClear').addEventListener('click', () => {
     $('#searchInput').value = '';
     exitSearch();
+  });
+  $('#emptyState').addEventListener('click', (e) => {
+    if (e.target.closest('.empty-upload')) $('#fileInput').click();
+    if (e.target.closest('.empty-clear')) {
+      $('#searchInput').value = '';
+      exitSearch();
+    }
+  });
+  $('#railMedia').addEventListener('click', (e) => {
+    const btn = e.target.closest('.rail-open');
+    if (!btn) return;
+    const item = state.items.find((i) => i.id === btn.dataset.id);
+    if (item) activate(item);
   });
   $('#searchInput').addEventListener('input', debounce((e) => {
     const q = e.target.value.trim();
@@ -86,6 +140,12 @@ function build(app) {
       exitSearch();
     }
   }, 350));
+  $('#searchInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.target.value = '';
+      exitSearch();
+    }
+  });
 
   // 列表事件（委托）
   const listEl = $('#fileList');
@@ -107,6 +167,14 @@ function build(app) {
     e.preventDefault();
     const item = state.items.find((i) => i.id === row.dataset.id);
     if (item) openMenuFor(item, e.clientX, e.clientY);
+  });
+  listEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = e.target.closest('[data-id]');
+    if (!row || e.target.closest('.fmore')) return;
+    e.preventDefault();
+    const item = state.items.find((i) => i.id === row.dataset.id);
+    if (item) activate(item);
   });
   onLongPress(listEl, (e) => {
     const row = e.target.closest('[data-id]');
@@ -241,11 +309,40 @@ function scheduleThumbsReload() {
   }, 4000);
 }
 
+function skeletonHtml() {
+  if (state.view === 'grid') {
+    return Array.from({ length: 8 }, () => `
+      <div class="ftile sk-tile" aria-hidden="true">
+        <div class="ticon sk"></div>
+        <div class="tmeta">
+          <div class="sk" style="width:72%"></div>
+          <div class="sk" style="width:42%;margin-top:7px"></div>
+        </div>
+      </div>`).join('');
+  }
+  return Array.from({ length: 7 }, () => `
+    <div class="sk-row" aria-hidden="true">
+      <span class="sk sk-icon"></span>
+      <span class="sk sk-name"></span>
+      <span class="sk sk-type"></span>
+      <span class="sk sk-size"></span>
+      <span class="sk sk-date"></span>
+      <span></span>
+    </div>`).join('');
+}
+
 async function load() {
   if (!built || !root.isConnected) return;
   const listEl = $('#fileList');
+  const shelf = $('#shelf');
   if (silentReload) silentReload = false;
-  else listEl.innerHTML = '<div class="loading-spin"></div>';
+  else {
+    shelf.hidden = false;
+    shelf.classList.toggle('grid', state.view === 'grid');
+    listEl.className = `file-list ${state.view}`;
+    listEl.innerHTML = skeletonHtml();
+    $('#listFoot').hidden = true;
+  }
   $('#emptyState').hidden = true;
   try {
     if (state.searching) {
@@ -258,25 +355,54 @@ async function load() {
       state.items = data.items;
       state.stats = data.stats;
       renderCrumbs();
-      renderStats();
       const input = $('#searchInput');
       if (input.value) { input.value = ''; $('#searchClear').hidden = true; }
       if (data.thumbsRunning) scheduleThumbsReload();
     }
+    renderPageHead();
     renderItems();
   } catch (err) {
     toast(err.message, 'error');
-    listEl.innerHTML = `<div class="load-error">${err.message}</div>`;
+    shelf.hidden = true;
+    listEl.innerHTML = `<div class="load-error">${escapeHtml(err.message)}</div>`;
+    $('#emptyState').hidden = true;
   }
 }
 
 // ---------- 渲染 ----------
 
-function renderCrumbs() {
-  const parts = [`<button class="crumb" data-id="">${icon('archive')} 根目录</button>`];
-  for (const p of state.cwdPath) {
-    parts.push(`<span class="crumb-sep">${icon('chevronRight')}</span><button class="crumb" data-id="${p.id}">${p.name}</button>`);
+function renderPageHead() {
+  const titleEl = $('#pageTitle');
+  const metaEl = $('#pageMeta');
+  if (!titleEl || !metaEl) return;
+  let title = '全部文件';
+  if (state.searching) {
+    title = '搜索结果';
+    metaEl.innerHTML = `<span class="num">${state.items.length}</span><span>项结果</span><span class="dot">·</span><span>「${escapeHtml(state.query)}」</span>`;
+  } else {
+    if (state.cwdPath.length) title = state.cwdPath[state.cwdPath.length - 1].name;
+    const s = state.stats;
+    if (s && (s.files || s.folders)) {
+      metaEl.innerHTML =
+        `<span class="num">${s.folders}</span><span>个文件夹</span>` +
+        `<span class="dot">·</span><span class="num">${s.files}</span><span>个文件</span>` +
+        `<span class="dot">·</span><span class="num">${formatSize(s.bytes)}</span>`;
+    } else if (s) {
+      metaEl.textContent = '这个文件夹还是空的';
+    } else {
+      metaEl.textContent = '';
+    }
   }
+  titleEl.textContent = title;
+  document.title = `${title} · FileHub`;
+}
+
+function renderCrumbs() {
+  const parts = [`<button class="crumb${state.cwdPath.length ? '' : ' current'}" data-id="">${icon('archive')} 根目录</button>`];
+  state.cwdPath.forEach((p, i) => {
+    const current = i === state.cwdPath.length - 1 ? ' current' : '';
+    parts.push(`<span class="crumb-sep">${icon('chevronRight')}</span><button class="crumb${current}" data-id="${p.id}">${escapeHtml(p.name)}</button>`);
+  });
   $('#crumbs').innerHTML = parts.join('');
 }
 
@@ -284,23 +410,18 @@ function renderSearchCrumb() {
   $('#crumbs').innerHTML =
     `<button class="crumb" data-id="">${icon('archive')} 根目录</button>
      <span class="crumb-sep">${icon('chevronRight')}</span>
-     <span class="crumb search-crumb">${icon('search')} 搜索「${state.query}」 · ${state.items.length} 项</span>`;
-}
-
-function renderStats() {
-  const s = state.stats;
-  $('#dirStats').textContent = s
-    ? `${formatSize(s.bytes)} · ${s.files} 文件 · ${s.folders} 文件夹`
-    : '';
+     <span class="crumb search-crumb">${icon('search')} 搜索</span>`;
 }
 
 function renderViewBtn() {
-  $('#btnView').innerHTML = icon(state.view === 'list' ? 'grid' : 'list');
-  $('#btnView').title = state.view === 'list' ? '切换为网格视图' : '切换为列表视图';
+  $$('#btnList, #btnGrid').forEach((btn) => {
+    const active = btn.dataset.view === state.view;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
 }
 
 function renderThumbsBtn() {
-  // 缩略图开关：与视图切换（列表/网格）图标严格区分 —— 用「图片」图标表达显示内容
   $('#btnThumbs').innerHTML = icon(state.thumbs ? 'image' : 'file');
   $('#btnThumbs').title = state.thumbs
     ? '图片显示：缩略图（点击切换为图标）'
@@ -308,8 +429,6 @@ function renderThumbsBtn() {
 }
 
 function thumbImg(item, size) {
-  // 图标垫底：缩略图加载中或失败时移除 img 即露出图标
-  // thumbBust：手动重建/清理缩略图后追加时间戳，绕过浏览器对 /thumb 的长缓存
   const bust = state.thumbBust ? `&t=${state.thumbBust}` : '';
   return `${icon(kindOf(item).icon)}<img class="thumb-img" loading="lazy" src="${thumbUrl(item.id, size)}${bust}" onerror="this.remove()" draggable="false" alt="" />`;
 }
@@ -322,45 +441,125 @@ function thumbable(item) {
 
 function rowHtml(item) {
   const k = kindOf(item);
-  const meta = state.searching && item.path ? `<span class="fpath">${item.path} /</span>` : '';
+  const isFolder = item.type === 'folder';
+  const name = escapeHtml(item.name);
+  const typeLabel = isFolder ? '文件夹' : (extOf(item.name).toUpperCase() || '文件');
+  const size = isFolder ? '—' : formatSize(item.size);
+  const date = formatDate(item.updatedAt);
+  const pathMeta = state.searching && item.path ? `<span class="fpath">${escapeHtml(item.path)} /</span>` : '';
   const useThumb = state.thumbs && thumbable(item);
   if (state.view === 'grid') {
     const ticon = useThumb
       ? `<div class="ticon has-thumb">${thumbImg(item, 384)}</div>`
       : `<div class="ticon ${k.cls}">${icon(k.icon)}</div>`;
     return `
-      <div class="ftile" data-id="${item.id}" title="${item.name}" draggable="true">
+      <div class="ftile" data-id="${item.id}" title="${name}" draggable="true" tabindex="0">
         ${ticon}
-        <div class="tname">${item.name}</div>
+        <div class="tmeta">
+          <div class="tname">${name}</div>
+          <div class="tsub num">${isFolder ? '文件夹' : `${size} · ${date}`}</div>
+        </div>
+        <button class="fmore" title="更多操作" aria-label="更多操作">${icon('more')}</button>
       </div>`;
   }
   const ficon = useThumb
     ? `<div class="ficon has-thumb">${thumbImg(item, 160)}</div>`
     : `<div class="ficon ${k.cls}">${icon(k.icon)}</div>`;
   return `
-    <div class="frow" data-id="${item.id}" draggable="true">
+    <div class="frow" data-id="${item.id}" draggable="true" tabindex="0">
       ${ficon}
-      <div class="fname"><span class="nt">${item.name}</span>${meta}</div>
-      <div class="fsize">${item.type === 'file' ? formatSize(item.size) : '—'}</div>
-      <div class="fdate">${formatDate(item.updatedAt)}</div>
-      <button class="fmore" title="更多操作">${icon('more')}</button>
+      <div class="fname">
+        <span class="nt">${name}</span>${pathMeta}
+        <span class="fsub num">${typeLabel}${isFolder ? '' : ` · ${size}`} · ${date}</span>
+      </div>
+      <div class="ftype">${typeLabel}</div>
+      <div class="fsize num">${size}</div>
+      <div class="fdate num">${date}</div>
+      <button class="fmore" title="更多操作" aria-label="更多操作">${icon('more')}</button>
     </div>`;
+}
+
+const KIND_LABELS = {
+  folder: '文件夹', image: '图片', video: '视频', audio: '音频',
+  archive: '压缩包', code: '代码', text: '文档', other: '文件',
+};
+
+/** 右栏只显示当前目录里真实存在的媒体与类型分布 */
+function renderRail() {
+  const rail = $('#rail');
+  const grid = $('#contentGrid');
+  const hasItems = state.items.length > 0;
+  rail.hidden = !hasItems;
+  grid.classList.toggle('no-rail', !hasItems);
+  if (!hasItems) return;
+
+  const media = state.items
+    .filter((i) => i.type === 'file' && ['image', 'video'].includes(kindOf(i).kind))
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0];
+  const mediaBox = $('#railMedia');
+  if (media) {
+    const k = kindOf(media);
+    const bust = state.thumbBust ? `&t=${state.thumbBust}` : '';
+    mediaBox.innerHTML = `
+      <button class="rail-media rail-open" data-id="${media.id}" title="打开 ${escapeHtml(media.name)}">
+        <span class="rail-thumb ${k.cls}">
+          ${icon(k.icon)}
+          <img src="${thumbUrl(media.id, 384)}${bust}" loading="lazy" onerror="this.remove()" alt="" draggable="false" />
+        </span>
+        <span class="rail-media-copy">
+          <span class="rail-media-name">${escapeHtml(media.name)}</span>
+          <span class="rail-media-meta num">${extOf(media.name).toUpperCase()} · ${formatSize(media.size)} · ${formatDate(media.updatedAt)}</span>
+        </span>
+      </button>`;
+  } else {
+    mediaBox.innerHTML = `<div class="rail-empty">${icon('image')}<p>此目录还没有图片或视频。</p></div>`;
+  }
+
+  const counts = new Map();
+  for (const item of state.items) {
+    const kind = kindOf(item).kind;
+    counts.set(kind, (counts.get(kind) || 0) + 1);
+  }
+  const rows = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const max = rows[0]?.[1] || 1;
+  $('#railTypesTitle').textContent = state.searching ? '结果构成' : '目录构成';
+  $('#railTypes').innerHTML = rows.map(([kind, count]) => `
+    <div class="type-row">
+      <div class="type-line"><span>${KIND_LABELS[kind] || '文件'}</span><span class="num">${count}</span></div>
+      <div class="type-bar"><i style="width:${Math.round((count / max) * 100)}%"></i></div>
+    </div>`).join('');
 }
 
 function renderItems() {
   const listEl = $('#fileList');
+  const shelf = $('#shelf');
   const empty = $('#emptyState');
+  const foot = $('#listFoot');
   listEl.className = `file-list ${state.view}`;
+  shelf.classList.toggle('grid', state.view === 'grid');
   if (!state.items.length) {
+    shelf.hidden = true;
+    foot.hidden = true;
     listEl.innerHTML = '';
     empty.hidden = false;
     empty.innerHTML = state.searching
-      ? `${icon('search')}<p>未找到与「${state.query}」匹配的文件</p>`
-      : `${icon('folder')}<p>此文件夹为空</p><p class="dim">点击右上角「上传」或把文件拖到这里</p>`;
+      ? `<div class="empty-icon">${icon('search')}</div>
+         <h2>没有找到匹配的文件</h2>
+         <p>「${escapeHtml(state.query)}」没有匹配项，换个关键词试试。</p>
+         <button class="btn btn-ghost empty-clear">清除搜索</button>`
+      : `<div class="empty-icon">${icon('folder')}</div>
+         <h2>此文件夹为空</h2>
+         <p>把文件拖到这里，或从设备上传。</p>
+         <button class="btn btn-primary empty-upload">${icon('upload')}上传文件</button>`;
+    renderRail();
     return;
   }
+  shelf.hidden = false;
   empty.hidden = true;
+  foot.hidden = state.view === 'grid' || state.searching;
+  $('#listFootCount').textContent = `${state.items.length} 项`;
   listEl.innerHTML = state.items.map(rowHtml).join('');
+  renderRail();
 }
 
 // ---------- 交互 ----------
@@ -576,7 +775,10 @@ export function mountBrowser(app) {
   if (!built || !root || !root.querySelector('.app-header')) build(app);
   renderViewBtn();
   renderThumbsBtn();
-  const chip = $('#btnUser span');
-  if (chip) chip.textContent = state.user?.name || '';
+  const name = state.user?.name || '';
+  const nameEl = $('#userName');
+  if (nameEl) nameEl.textContent = name;
+  const initialEl = $('#userInitial');
+  if (initialEl) initialEl.textContent = (name.trim().slice(0, 1) || '?').toUpperCase();
   load();
 }

@@ -50,7 +50,7 @@ async function boot() {
   } catch {
     toast('无法连接服务器，请检查 FileHub 服务是否在运行', 'error', 5000);
     $('#app').innerHTML =
-      '<div class="auth-view"><div class="auth-card"><h1>无法连接服务器</h1><p class="auth-sub">请确认 FileHub 服务已启动后刷新页面。</p><button class="btn btn-primary" onclick="location.reload()">重试</button></div></div>';
+      '<div class="auth-view"><div class="auth-error"><h1>无法连接服务器</h1><p class="auth-sub">请确认 FileHub 服务已启动后刷新页面。</p><button class="btn btn-primary btn-block" onclick="location.reload()">重试</button></div></div>';
     return;
   }
   route();
