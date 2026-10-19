@@ -50,10 +50,12 @@ export function openPlayer(item, playlist = []) {
     return () => {};
   }
 
-  // 全屏策略（优先用 xgplayer 自带能力）：
-  //  - 设备判定用内置 Sniffer（基于 UA）：触屏笔记本仍算桌面，避免被误判为手机而旋转 90°。
-  //  - rotateFullscreen 仅移动端启用，桌面走原生全屏，方向不会错。
-  //  - 关闭「网页全屏」（cssFullscreen）：它只是把播放器放大到页面内，并非系统全屏。
+  // 全屏策略：
+  //  - 设备判定用内置 Sniffer（基于 UA）：触屏笔记本仍算桌面，避免被误判为手机。
+  //  - 移动端也必须走系统全屏（Fullscreen API / video.webkitEnterFullscreen）：
+  //    xgplayer 的 rotateFullscreen 只是 CSS 旋转 + fixed 铺满页面，属于「伪全屏」，
+  //    浏览器地址栏和系统导航栏依然可见，并不是真正的全屏。
+  //  - 关闭「网页全屏」（cssFullscreen）：它同样只是把播放器放大到页面内。
   const isMobile = Player.Sniffer ? Player.Sniffer.device === 'mobile' : ('ontouchstart' in window);
 
   player = new Player({
@@ -66,7 +68,22 @@ export function openPlayer(item, playlist = []) {
     playbackRate: [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5],
     pip: !isMobile,
     cssFullscreen: false,          // 移除「网页全屏」，只保留系统全屏
-    fullscreen: { rotateFullscreen: isMobile },
+    fullscreen: { rotateFullscreen: false },
+  });
+
+  // 移动端进入系统全屏后再尝试锁横屏：
+  // requestFullscreen 是异步的，同一 tick 调 orientation.lock 会因「尚未全屏」被拒绝，
+  // 所以必须等 fullscreen_change 事件；竖屏视频不强制旋转，iOS 不支持时静默忽略。
+  const unlockOrientation = () => {
+    if (!isMobile) return;
+    try { screen.orientation?.unlock?.(); } catch { /* 不支持 */ }
+  };
+  player.on('fullscreen_change', (on) => {
+    if (!on) { unlockOrientation(); return; }
+    if (!isMobile || !screen.orientation?.lock) return;
+    const media = player.media;
+    if (!media || media.videoWidth <= media.videoHeight) return;
+    try { screen.orientation.lock('landscape')?.catch?.(() => {}); } catch { /* 不支持 */ }
   });
 
   const setTitle = () => {
@@ -134,6 +151,7 @@ export function openPlayer(item, playlist = []) {
   const close = () => {
     endFast();
     document.removeEventListener('keydown', onKey);
+    unlockOrientation();
     try { player.destroy(); } catch { /* 已销毁 */ }
     ov.classList.remove('show');
     setTimeout(() => ov.remove(), 180);
